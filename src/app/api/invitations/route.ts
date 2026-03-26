@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { v4 as uuidv4 } from "uuid";
+import { Resend } from "resend";
 
 // GET /api/invitations - List pending invitations for the organization
 export async function GET() {
@@ -116,6 +117,38 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    // Send invitation email via Resend
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || "http://localhost:3001";
+        const inviteUrl = `${baseUrl}/invite/${invitation.token}`;
+
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || "Dotco <onboarding@resend.dev>",
+          to: email,
+          subject: `You're invited to join ${organization?.name ?? "Dotco"}`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+              <h2 style="color: #1a1a1a; font-size: 20px; margin-bottom: 8px;">${organization?.name ?? "Dotco"}</h2>
+              <p style="color: #666; font-size: 14px; line-height: 1.6;">
+                ${session.user.name} has invited you to join <strong>${organization?.name ?? "the team"}</strong> on Dotco.
+              </p>
+              <a href="${inviteUrl}" style="display: inline-block; margin: 24px 0; padding: 10px 24px; background: #1a1a1a; color: #fff; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500;">
+                Accept Invitation
+              </a>
+              <p style="color: #999; font-size: 12px;">
+                This invitation expires in ${expiryDays} days. If you didn't expect this, you can ignore this email.
+              </p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error("Failed to send invitation email:", emailError);
+        // Don't fail the invitation creation if email fails
+      }
+    }
 
     return NextResponse.json(invitation, { status: 201 });
   } catch (error) {
