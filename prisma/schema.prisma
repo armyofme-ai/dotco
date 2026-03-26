@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Organization ───────────────────────────────────────────
+model Organization {
+  id        String   @id @default(cuid())
+  name      String   @default("AoM")
+  logo      String?
+  timezone  String   @default("UTC")
+
+  sessionTimeout   Int @default(30)     // minutes
+  invitationExpiry Int @default(7)      // days
+  defaultProjectStatus String @default("backlog")
+
+  // Kanban columns: ordered array of ProjectStatus values to show
+  kanbanColumns Json?
+  // Custom labels for kanban columns: {"BACKLOG": "To Do", "IN_PROGRESS": "Working"}
+  kanbanLabels  Json?
+
+  users    User[]
+  projects Project[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── User ───────────────────────────────────────────────────
+enum UserRole {
+  OWNER
+  MEMBER
+}
+
+model User {
+  id             String   @id @default(cuid())
+  name           String
+  username       String   @unique
+  email          String   @unique
+  passwordHash   String
+  avatar         String?
+  role           UserRole @default(MEMBER)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  // Relations
+  projectMemberships ProjectMember[]
+  taskAssignments    TaskAssignee[]
+  meetingAttendances MeetingAttendee[]
+  nextStepAssignees  NextStep[]
+
+  // Invitations sent by this user
+  invitationsSent Invitation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+
+  invitedById    String
+  invitedBy      User         @relation(fields: [invitedById], references: [id])
+  organizationId String
+
+  createdAt DateTime @default(now())
+}
+
+// ─── Project ────────────────────────────────────────────────
+enum ProjectStatus {
+  BACKLOG
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  IN_REVIEW
+  COMPLETED
+  ARCHIVED
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(BACKLOG)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  members  ProjectMember[]
+  tasks    Task[]
+  meetings Meeting[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProjectMember {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+}
+
+// ─── Task ───────────────────────────────────────────────────
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  startDate   DateTime
+  endDate     DateTime
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  assignees TaskAssignee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TaskAssignee {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
+}
+
+// ─── Meeting ────────────────────────────────────────────────
+model Meeting {
+  id        String   @id @default(cuid())
+  name      String
+  date      DateTime
+  startTime String   // HH:mm format
+  endTime   String   // HH:mm format
+  agenda    String?
+
+  transcription String?
+  summary       String?
+
+  // Diarized transcript segments: [{speaker, text, startTime, endTime}]
+  transcriptSegments Json?
+  // Maps speaker IDs to names: {"speaker_0": "John", "speaker_1": "Jane"}
+  speakerMap         Json?
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  attendees     MeetingAttendee[]
+  media         Media[]
+  meetingPoints MeetingPoint[]
+  nextSteps     NextStep[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MeetingAttendee {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, meetingId])
+}
+
+model Media {
+  id        String @id @default(cuid())
+  filename  String
+  url       String
+  type      String // "photo" or "audio"
+  size      Int    // bytes
+  mimeType  String
+
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model MeetingPoint {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+  order       Int     @default(0)
+
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model NextStep {
+  id          String   @id @default(cuid())
+  description String
+  dueDate     DateTime?
+  completed   Boolean  @default(false)
+  order       Int      @default(0)
+
+  assigneeId String?
+  assignee   User?   @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

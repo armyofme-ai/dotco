@@ -1,0 +1,264 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+
+// GET /api/projects/[id]/meetings/[meetingId] - Get full meeting with all relations
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; meetingId: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id, meetingId } = await params;
+
+    const project = await prisma.project.findUnique({ where: { id } });
+    if (!project) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      );
+    }
+
+    if (project.organizationId !== session.user.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      include: {
+        attendees: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                email: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+        media: {
+          orderBy: { createdAt: "desc" },
+        },
+        meetingPoints: {
+          orderBy: { order: "asc" },
+        },
+        nextSteps: {
+          include: {
+            assignee: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                avatar: true,
+              },
+            },
+          },
+          orderBy: { order: "asc" },
+        },
+      },
+    });
+
+    if (!meeting) {
+      return NextResponse.json(
+        { error: "Meeting not found" },
+        { status: 404 }
+      );
+    }
+
+    if (meeting.projectId !== id) {
+      return NextResponse.json(
+        { error: "Meeting does not belong to this project" },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(meeting);
+  } catch (error) {
+    console.error("Error fetching meeting:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch meeting" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/projects/[id]/meetings/[meetingId] - Update a meeting
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; meetingId: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id, meetingId } = await params;
+
+    const project = await prisma.project.findUnique({ where: { id } });
+    if (!project) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      );
+    }
+
+    if (project.organizationId !== session.user.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const existingMeeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+    });
+    if (!existingMeeting) {
+      return NextResponse.json(
+        { error: "Meeting not found" },
+        { status: 404 }
+      );
+    }
+
+    if (existingMeeting.projectId !== id) {
+      return NextResponse.json(
+        { error: "Meeting does not belong to this project" },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const {
+      name,
+      date,
+      startTime,
+      endTime,
+      agenda,
+      transcription,
+      summary,
+      attendeeIds,
+    } = body;
+
+    const data: Record<string, unknown> = {};
+    if (name !== undefined) data.name = name;
+    if (date !== undefined) data.date = new Date(date);
+    if (startTime !== undefined) data.startTime = startTime;
+    if (endTime !== undefined) data.endTime = endTime;
+    if (agenda !== undefined) data.agenda = agenda;
+    if (transcription !== undefined) data.transcription = transcription;
+    if (summary !== undefined) data.summary = summary;
+
+    // Handle attendees update: delete all existing and re-create
+    if (attendeeIds !== undefined) {
+      await prisma.meetingAttendee.deleteMany({ where: { meetingId } });
+      if (attendeeIds.length > 0) {
+        await prisma.meetingAttendee.createMany({
+          data: attendeeIds.map((userId: string) => ({
+            userId,
+            meetingId,
+          })),
+        });
+      }
+    }
+
+    const meeting = await prisma.meeting.update({
+      where: { id: meetingId },
+      data,
+      include: {
+        attendees: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+        media: true,
+        meetingPoints: { orderBy: { order: "asc" } },
+        nextSteps: {
+          include: {
+            assignee: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+                avatar: true,
+              },
+            },
+          },
+          orderBy: { order: "asc" },
+        },
+      },
+    });
+
+    return NextResponse.json(meeting);
+  } catch (error) {
+    console.error("Error updating meeting:", error);
+    return NextResponse.json(
+      { error: "Failed to update meeting" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/projects/[id]/meetings/[meetingId] - Delete a meeting
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; meetingId: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id, meetingId } = await params;
+
+    const project = await prisma.project.findUnique({ where: { id } });
+    if (!project) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      );
+    }
+
+    if (project.organizationId !== session.user.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+    });
+    if (!meeting) {
+      return NextResponse.json(
+        { error: "Meeting not found" },
+        { status: 404 }
+      );
+    }
+
+    if (meeting.projectId !== id) {
+      return NextResponse.json(
+        { error: "Meeting does not belong to this project" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.meeting.delete({ where: { id: meetingId } });
+
+    return NextResponse.json({ message: "Meeting deleted" });
+  } catch (error) {
+    console.error("Error deleting meeting:", error);
+    return NextResponse.json(
+      { error: "Failed to delete meeting" },
+      { status: 500 }
+    );
+  }
+}
