@@ -1,22 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
-// POST /api/projects/[id]/meetings/[meetingId]/media - Handle client upload callback
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; meetingId: string }> }
 ) {
   const { id, meetingId } = await params;
 
+  // Parse body for handleUpload
   const body = (await request.json()) as HandleUploadBody;
 
   try {
     const jsonResponse = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async (pathname) => {
+      onBeforeGenerateToken: async () => {
         const session = await auth();
         if (!session?.user) {
           throw new Error("Unauthorized");
@@ -34,7 +35,7 @@ export async function POST(
 
         return {
           allowedContentTypes: ["image/*", "audio/*"],
-          maximumSizeInBytes: 50 * 1024 * 1024, // 50MB
+          maximumSizeInBytes: 50 * 1024 * 1024,
           tokenPayload: JSON.stringify({
             meetingId,
             userId: session.user.id,
@@ -42,26 +43,33 @@ export async function POST(
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        const payload = JSON.parse(tokenPayload || "{}");
-        const mimeType = blob.contentType || "application/octet-stream";
-        const type = mimeType.startsWith("image/") ? "photo" : "audio";
+        try {
+          const payload = JSON.parse(tokenPayload || "{}");
+          const contentType = blob.contentType || "application/octet-stream";
+          const type = contentType.startsWith("image/") ? "photo" : "audio";
+          const filename = blob.pathname.split("/").pop() || "file";
 
-        await prisma.media.create({
-          data: {
-            filename: blob.pathname.split("/").pop() || "file",
-            url: blob.url,
-            type,
-            size: 0,
-            mimeType,
-            meetingId: payload.meetingId,
-          },
-        });
+          await prisma.media.create({
+            data: {
+              filename,
+              url: blob.url,
+              type,
+              size: 0,
+              mimeType: contentType,
+              meetingId: payload.meetingId,
+            },
+          });
+        } catch (error) {
+          console.error("Error in onUploadCompleted:", error);
+          throw error;
+        }
       },
     });
 
     return NextResponse.json(jsonResponse);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed";
+    console.error("Upload error:", error);
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
