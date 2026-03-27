@@ -21,19 +21,30 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
       data: { transcription: "__TRANSCRIBING__" },
     });
 
+    // Download file and send buffer to Deepgram (more reliable than URL for large files)
+    console.log(`Downloading audio from ${audioUrl}...`);
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+    console.log(`Downloaded ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB, sending to Deepgram...`);
+
     const deepgram = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY! });
-    const result = await deepgram.listen.v1.media.transcribeUrl({
-      url: audioUrl,
-      model: "nova-3",
-      diarize: true,
-      smart_format: true,
-      punctuate: true,
-      paragraphs: true,
-      utterances: true,
-    });
+    const result = await deepgram.listen.v1.media.transcribeFile(
+      audioBuffer,
+      {
+        model: "nova-3",
+        diarize: true,
+        smart_format: true,
+        punctuate: true,
+        paragraphs: true,
+        utterances: true,
+      }
+    );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const utterances = (result as any)?.results?.utterances ?? [];
+    const resultAny = result as any;
+    const utterances = resultAny?.results?.utterances ?? [];
+    console.log(`Deepgram returned ${utterances.length} utterances`);
 
     const transcriptSegments: TranscriptSegment[] = utterances.map(
       (u: { speaker: number; transcript: string; start: number; end: number }) => ({
