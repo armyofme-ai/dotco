@@ -1,107 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { put } from "@vercel/blob";
-import { v4 as uuidv4 } from "uuid";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
-export const runtime = "nodejs";
-export const maxDuration = 60;
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-
-// POST /api/projects/[id]/meetings/[meetingId]/media - Upload media
+// POST /api/projects/[id]/meetings/[meetingId]/media - Handle client upload callback
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; meetingId: string }> }
 ) {
+  const { id, meetingId } = await params;
+
+  const body = (await request.json()) as HandleUploadBody;
+
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (pathname) => {
+        const session = await auth();
+        if (!session?.user) {
+          throw new Error("Unauthorized");
+        }
 
-    const { id, meetingId } = await params;
+        const project = await prisma.project.findUnique({ where: { id } });
+        if (!project || project.organizationId !== session.user.organizationId) {
+          throw new Error("Forbidden");
+        }
 
-    const project = await prisma.project.findUnique({ where: { id } });
-    if (!project) {
-      return NextResponse.json(
-        { error: "Project not found" },
-        { status: 404 }
-      );
-    }
+        const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
+        if (!meeting || meeting.projectId !== id) {
+          throw new Error("Meeting not found");
+        }
 
-    if (project.organizationId !== session.user.organizationId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+        return {
+          allowedContentTypes: ["image/*", "audio/*"],
+          maximumSizeInBytes: 50 * 1024 * 1024, // 50MB
+          tokenPayload: JSON.stringify({
+            meetingId,
+            userId: session.user.id,
+          }),
+        };
+      },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        const payload = JSON.parse(tokenPayload || "{}");
+        const mimeType = blob.contentType || "application/octet-stream";
+        const type = mimeType.startsWith("image/") ? "photo" : "audio";
 
-    const meeting = await prisma.meeting.findUnique({
-      where: { id: meetingId },
-    });
-    if (!meeting) {
-      return NextResponse.json(
-        { error: "Meeting not found" },
-        { status: 404 }
-      );
-    }
-
-    if (meeting.projectId !== id) {
-      return NextResponse.json(
-        { error: "Meeting does not belong to this project" },
-        { status: 400 }
-      );
-    }
-
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-
-    if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: "File size exceeds 50MB limit" },
-        { status: 400 }
-      );
-    }
-
-    const mimeType = file.type;
-    if (!mimeType.startsWith("image/") && !mimeType.startsWith("audio/")) {
-      return NextResponse.json(
-        { error: "Only image and audio files are accepted" },
-        { status: 400 }
-      );
-    }
-
-    const type = mimeType.startsWith("image/") ? "photo" : "audio";
-    const blobPath = `${type}/${uuidv4()}-${file.name}`;
-
-    // Upload to Vercel Blob
-    const blob = await put(blobPath, file, {
-      access: "public",
-      contentType: mimeType,
-    });
-
-    const media = await prisma.media.create({
-      data: {
-        filename: file.name,
-        url: blob.url,
-        type,
-        size: file.size,
-        mimeType,
-        meetingId,
+        await prisma.media.create({
+          data: {
+            filename: blob.pathname.split("/").pop() || "file",
+            url: blob.url,
+            type,
+            size: 0,
+            mimeType,
+            meetingId: payload.meetingId,
+          },
+        });
       },
     });
 
-    return NextResponse.json(media, { status: 201 });
+    return NextResponse.json(jsonResponse);
   } catch (error) {
-    console.error("Error uploading media:", error);
-    return NextResponse.json(
-      { error: "Failed to upload media" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Upload failed";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
