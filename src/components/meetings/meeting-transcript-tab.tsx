@@ -26,6 +26,7 @@ interface MeetingTranscriptTabProps {
   transcriptSegments: TranscriptSegment[] | null;
   speakerMap: Record<string, string> | null;
   audioUrl: string | null;
+  transcriptionError?: string | null;
   onMeetingChange: () => void;
   onSummarizeComplete?: () => void;
 }
@@ -100,6 +101,7 @@ export function MeetingTranscriptTab({
   transcriptSegments,
   speakerMap,
   audioUrl,
+  transcriptionError,
   onMeetingChange,
   onSummarizeComplete,
 }: MeetingTranscriptTabProps) {
@@ -272,11 +274,12 @@ export function MeetingTranscriptTab({
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <Mic className="mb-3 size-10 text-muted-foreground/50" />
         <h3 className="font-heading text-base font-medium">
-          No transcript yet
+          {transcriptionError ? "Transcription failed" : "No transcript yet"}
         </h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Upload and transcribe an audio recording from the Recording & Photos
-          tab to generate a transcript.
+          {transcriptionError
+            ? transcriptionError
+            : "Upload and transcribe an audio recording from the Recording & Photos tab to generate a transcript."}
         </p>
       </div>
     );

@@ -310,6 +310,7 @@ export function MeetingDetail({ projectId, meetingId }: MeetingDetailProps) {
             meetingId={meetingId}
             transcriptSegments={meeting.transcriptSegments}
             speakerMap={meeting.speakerMap}
+            transcriptionError={meeting.transcription?.startsWith("__FAILED__") ? meeting.transcription.replace("__FAILED__", "") : null}
             audioUrl={
               (meeting.transcribedMediaId
                 ? meeting.media.find((m) => m.id === meeting.transcribedMediaId)?.url

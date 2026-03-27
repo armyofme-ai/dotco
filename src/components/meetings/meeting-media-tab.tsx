@@ -222,13 +222,18 @@ export function MeetingMediaTab({
             `/api/projects/${projectId}/meetings/${meetingId}/transcribe`
           );
           if (!statusRes.ok) continue;
-          const { status } = await statusRes.json();
-          if (status === "complete") {
+          const data = await statusRes.json();
+          if (data.status === "complete") {
             onMediaChange();
             onTranscribeComplete?.();
             return;
           }
-          if (status !== "transcribing") {
+          if (data.status === "failed") {
+            alert(`Transcription failed: ${data.message || "Unknown error"}`);
+            onMediaChange();
+            return;
+          }
+          if (data.status !== "transcribing") {
             throw new Error("Transcription failed");
           }
         }

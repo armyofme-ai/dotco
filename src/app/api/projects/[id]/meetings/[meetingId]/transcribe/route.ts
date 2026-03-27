@@ -48,19 +48,24 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
     );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const utterances = (result as any)?.results?.utterances ?? [];
-    console.log(`[${runId}] Deepgram returned ${utterances.length} utterances`);
+    const resultAny = result as any;
+    const utterances = resultAny?.results?.utterances ?? [];
+    const audioDuration = resultAny?.metadata?.duration ?? 0;
+    const wordCount = resultAny?.results?.channels?.[0]?.alternatives?.[0]?.words?.length ?? 0;
 
-    // Reject partial results — an 83-min file should have hundreds of utterances
-    if (utterances.length < 5) {
-      console.error(`[${runId}] Deepgram returned suspiciously few utterances (${utterances.length}). Rejecting.`);
-      // Check we still own this run before clearing
+    console.log(`[${runId}] Deepgram: ${utterances.length} utterances, ${wordCount} words, duration=${audioDuration}s`);
+
+    // Quality check: for speech, expect at least ~2 words per second of audio.
+    // If Deepgram returns far fewer, the audio is likely music/silence/noise, not speech.
+    const expectedMinWords = Math.max(20, audioDuration * 0.5); // at least 0.5 words/sec
+    if (wordCount < expectedMinWords) {
+      console.error(`[${runId}] Insufficient speech detected: ${wordCount} words in ${audioDuration}s audio (expected >=${Math.round(expectedMinWords)}). The audio may not contain enough speech.`);
       const current = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { transcription: true } });
-      if (current?.transcription === `__TRANSCRIBING__${runId}`) {
+      if (current?.transcription?.includes(runId)) {
         await prisma.meeting.update({
           where: { id: meetingId },
           data: {
-            transcription: null,
+            transcription: `__FAILED__Insufficient speech detected. Only ${wordCount} words found in ${Math.round(audioDuration / 60)} minutes of audio. The recording may contain mostly music, silence, or background noise. Try re-recording or using a higher quality export.`,
             transcriptSegments: Prisma.DbNull,
             speakerMap: Prisma.DbNull,
             transcribedMediaId: null,
@@ -199,6 +204,11 @@ export async function GET(
 
     if (meeting.transcription?.startsWith("__TRANSCRIBING__")) {
       return NextResponse.json({ status: "transcribing" });
+    }
+
+    if (meeting.transcription?.startsWith("__FAILED__")) {
+      const message = meeting.transcription.replace("__FAILED__", "");
+      return NextResponse.json({ status: "failed", message });
     }
 
     if (meeting.transcriptSegments) {
