@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { put } from "@vercel/blob";
 import {
   Camera,
@@ -70,6 +70,7 @@ export function MeetingMediaTab({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [transcribingId, setTranscribingId] = useState<string | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const photos = media.filter((m) => m.type === "photo");
@@ -77,6 +78,53 @@ export function MeetingMediaTab({
 
   const hasTranscript =
     transcriptSegments !== null && transcriptSegments.length > 0;
+
+  // Check if a transcription is in progress on mount
+  useEffect(() => {
+    let cancelled = false;
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(
+          `/api/projects/${projectId}/meetings/${meetingId}/transcribe`
+        );
+        if (!res.ok) return;
+        const { status } = await res.json();
+        if (status === "transcribing" && !cancelled) {
+          setIsTranscribing(true);
+          // Start polling
+          const poll = async () => {
+            for (let i = 0; i < 120; i++) {
+              await new Promise((r) => setTimeout(r, 5000));
+              if (cancelled) return;
+              const r = await fetch(
+                `/api/projects/${projectId}/meetings/${meetingId}/transcribe`
+              );
+              if (!r.ok) continue;
+              const { status: s } = await r.json();
+              if (s === "complete") {
+                if (!cancelled) {
+                  setIsTranscribing(false);
+                  onMediaChange();
+                  onTranscribeComplete?.();
+                }
+                return;
+              }
+              if (s !== "transcribing") {
+                if (!cancelled) setIsTranscribing(false);
+                return;
+              }
+            }
+            if (!cancelled) setIsTranscribing(false);
+          };
+          poll();
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkStatus();
+    return () => { cancelled = true; };
+  }, [projectId, meetingId, onMediaChange, onTranscribeComplete]);
 
   const uploadFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -154,6 +202,8 @@ export function MeetingMediaTab({
   const handleTranscribe = async (mediaId: string) => {
     try {
       setTranscribingId(mediaId);
+
+      // Start transcription (returns immediately)
       const res = await fetch(
         `/api/projects/${projectId}/meetings/${meetingId}/transcribe`,
         {
@@ -162,9 +212,30 @@ export function MeetingMediaTab({
           body: JSON.stringify({ mediaId }),
         }
       );
-      if (!res.ok) throw new Error("Failed to transcribe audio");
-      onMediaChange();
-      onTranscribeComplete?.();
+      if (!res.ok) throw new Error("Failed to start transcription");
+
+      // Poll for completion every 5 seconds
+      const poll = async () => {
+        for (let i = 0; i < 120; i++) { // up to 10 minutes
+          await new Promise((r) => setTimeout(r, 5000));
+          const statusRes = await fetch(
+            `/api/projects/${projectId}/meetings/${meetingId}/transcribe`
+          );
+          if (!statusRes.ok) continue;
+          const { status } = await statusRes.json();
+          if (status === "complete") {
+            onMediaChange();
+            onTranscribeComplete?.();
+            return;
+          }
+          if (status !== "transcribing") {
+            throw new Error("Transcription failed");
+          }
+        }
+        throw new Error("Transcription timed out");
+      };
+
+      await poll();
     } catch (error) {
       console.error("Error transcribing audio:", error);
     } finally {
@@ -339,17 +410,17 @@ export function MeetingMediaTab({
                         Transcribed
                       </Badge>
                     )}
-                    {transcribingId === audio.id ? (
+                    {transcribingId === audio.id || isTranscribing ? (
                       <Button variant="outline" size="sm" disabled>
                         <Loader2 className="size-3.5 animate-spin" />
-                        <span className="text-xs">Transcribing audio...</span>
+                        <span className="text-xs">Transcribing...</span>
                       </Button>
                     ) : (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleTranscribe(audio.id)}
-                        disabled={transcribingId !== null}
+                        disabled={transcribingId !== null || isTranscribing}
                       >
                         <Mic className="size-3.5" />
                         <span className="text-xs">Transcribe</span>
