@@ -2,67 +2,70 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
+// GET - list media (used by frontend after upload to refresh)
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; meetingId: string }> }
+) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { meetingId } = await params;
+  const media = await prisma.media.findMany({
+    where: { meetingId },
+    orderBy: { createdAt: "desc" },
+  });
+  return NextResponse.json(media);
+}
+
+// POST - register an uploaded blob as a media record
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; meetingId: string }> }
 ) {
-  const { id, meetingId } = await params;
-  const body = (await request.json()) as HandleUploadBody;
-
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request,
-      token: process.env.BLOBPRO_READ_WRITE_TOKEN,
-      onBeforeGenerateToken: async () => {
-        const session = await auth();
-        if (!session?.user) throw new Error("Unauthorized");
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-        const project = await prisma.project.findUnique({ where: { id } });
-        if (!project || project.organizationId !== session.user.organizationId) {
-          throw new Error("Forbidden");
-        }
+    const { id, meetingId } = await params;
 
-        const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
-        if (!meeting || meeting.projectId !== id) throw new Error("Meeting not found");
+    const project = await prisma.project.findUnique({ where: { id } });
+    if (!project || project.organizationId !== session.user.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-        return {
-          allowedContentTypes: ["image/*", "audio/*"],
-          maximumSizeInBytes: 50 * 1024 * 1024,
-          tokenPayload: JSON.stringify({ meetingId }),
-        };
-      },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        try {
-          const payload = JSON.parse(tokenPayload || "{}");
-          const ct = blob.contentType || "application/octet-stream";
-          const type = ct.startsWith("image/") ? "photo" : "audio";
+    const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting || meeting.projectId !== id) {
+      return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+    }
 
-          await prisma.media.create({
-            data: {
-              filename: blob.pathname.split("/").pop() || "file",
-              url: blob.url,
-              type,
-              size: 0,
-              mimeType: ct,
-              meetingId: payload.meetingId,
-            },
-          });
-        } catch (e) {
-          console.error("onUploadCompleted error:", e);
-          throw e;
-        }
+    const body = await request.json();
+    const { url, filename, mimeType } = body;
+
+    if (!url || !filename || !mimeType) {
+      return NextResponse.json({ error: "url, filename, and mimeType are required" }, { status: 400 });
+    }
+
+    const type = mimeType.startsWith("image/") ? "photo" : "audio";
+
+    const media = await prisma.media.create({
+      data: {
+        filename,
+        url,
+        type,
+        size: 0,
+        mimeType,
+        meetingId,
       },
     });
 
-    return NextResponse.json(jsonResponse);
+    return NextResponse.json(media, { status: 201 });
   } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Upload failed" },
-      { status: 400 }
-    );
+    console.error("Error creating media record:", error);
+    return NextResponse.json({ error: "Failed to create media record" }, { status: 500 });
   }
 }

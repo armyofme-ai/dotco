@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
+import { put } from "@vercel/blob";
 import {
   Camera,
   Loader2,
@@ -90,11 +90,37 @@ export function MeetingMediaTab({
         for (let i = 0; i < fileArray.length; i++) {
           const file = fileArray[i];
           const type = file.type.startsWith("image/") ? "photo" : "audio";
+          const pathname = `${type}/${Date.now()}-${file.name}`;
 
-          await upload(`${type}/${file.name}`, file, {
-            access: "public",
-            handleUploadUrl: `/api/projects/${projectId}/meetings/${meetingId}/media`,
+          // 1. Get client token from our API
+          const tokenRes = await fetch("/api/upload-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pathname }),
           });
+          if (!tokenRes.ok) throw new Error("Failed to get upload token");
+          const { clientToken } = await tokenRes.json();
+
+          // 2. Upload directly to Vercel Blob
+          const blob = await put(pathname, file, {
+            access: "public",
+            token: clientToken,
+          });
+
+          // 3. Register the blob URL as a media record
+          const mediaRes = await fetch(
+            `/api/projects/${projectId}/meetings/${meetingId}/media`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: blob.url,
+                filename: file.name,
+                mimeType: file.type,
+              }),
+            }
+          );
+          if (!mediaRes.ok) throw new Error("Failed to register media");
 
           setUploadProgress(Math.round(((i + 1) / fileArray.length) * 100));
         }
