@@ -57,7 +57,7 @@ export async function DELETE(
     // Delete from Vercel Blob (or ignore if local/old URL)
     try {
       if (media.url.includes("blob.vercel-storage.com")) {
-        await del(media.url);
+        await del(media.url, { token: process.env.BLOBPRO_READ_WRITE_TOKEN });
       }
     } catch {
       console.warn("Could not delete blob:", media.url);
