@@ -66,7 +66,7 @@ export function InviteRegistrationForm({
   return (
     <Card>
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-bold">Dotco</CardTitle>
+        <CardTitle className="text-2xl font-extrabold"><span className="text-muted-foreground">.</span>CO</CardTitle>
         <CardDescription>Create your account</CardDescription>
       </CardHeader>
       <CardContent>

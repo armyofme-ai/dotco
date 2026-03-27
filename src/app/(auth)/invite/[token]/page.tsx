@@ -18,7 +18,7 @@ export default async function InvitePage({
       <div className="w-full max-w-sm">
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold">Dotco</CardTitle>
+            <CardTitle className="text-2xl font-extrabold"><span className="text-muted-foreground">.</span>CO</CardTitle>
             <CardDescription>Invalid Invitation</CardDescription>
           </CardHeader>
           <CardContent>
@@ -36,7 +36,7 @@ export default async function InvitePage({
       <div className="w-full max-w-sm">
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold">Dotco</CardTitle>
+            <CardTitle className="text-2xl font-extrabold"><span className="text-muted-foreground">.</span>CO</CardTitle>
             <CardDescription>Invitation Expired</CardDescription>
           </CardHeader>
           <CardContent>
