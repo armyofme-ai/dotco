@@ -2,67 +2,66 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { put } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 
-// POST /api/projects/[id]/meetings/[meetingId]/media - Upload media via server-side streaming
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; meetingId: string }> }
 ) {
+  const { id, meetingId } = await params;
+  const body = (await request.json()) as HandleUploadBody;
+
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async () => {
+        const session = await auth();
+        if (!session?.user) throw new Error("Unauthorized");
 
-    const { id, meetingId } = await params;
+        const project = await prisma.project.findUnique({ where: { id } });
+        if (!project || project.organizationId !== session.user.organizationId) {
+          throw new Error("Forbidden");
+        }
 
-    const project = await prisma.project.findUnique({ where: { id } });
-    if (!project || project.organizationId !== session.user.organizationId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+        const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
+        if (!meeting || meeting.projectId !== id) throw new Error("Meeting not found");
 
-    const meeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
-    if (!meeting || meeting.projectId !== id) {
-      return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
-    }
+        return {
+          allowedContentTypes: ["image/*", "audio/*"],
+          maximumSizeInBytes: 50 * 1024 * 1024,
+          tokenPayload: JSON.stringify({ meetingId }),
+        };
+      },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        try {
+          const payload = JSON.parse(tokenPayload || "{}");
+          const ct = blob.contentType || "application/octet-stream";
+          const type = ct.startsWith("image/") ? "photo" : "audio";
 
-    // Get filename and content type from headers (sent by client)
-    const filename = request.headers.get("x-filename") || "file";
-    const contentType = request.headers.get("content-type") || "application/octet-stream";
-
-    if (!contentType.startsWith("image/") && !contentType.startsWith("audio/")) {
-      return NextResponse.json(
-        { error: "Only image and audio files are accepted" },
-        { status: 400 }
-      );
-    }
-
-    const type = contentType.startsWith("image/") ? "photo" : "audio";
-
-    // Stream the request body directly to Vercel Blob (bypasses body size limit)
-    const blob = await put(`${type}/${filename}`, request.body!, {
-      access: "public",
-      contentType,
-    });
-
-    const media = await prisma.media.create({
-      data: {
-        filename,
-        url: blob.url,
-        type,
-        size: 0,
-        mimeType: contentType,
-        meetingId,
+          await prisma.media.create({
+            data: {
+              filename: blob.pathname.split("/").pop() || "file",
+              url: blob.url,
+              type,
+              size: 0,
+              mimeType: ct,
+              meetingId: payload.meetingId,
+            },
+          });
+        } catch (e) {
+          console.error("onUploadCompleted error:", e);
+          throw e;
+        }
       },
     });
 
-    return NextResponse.json(media, { status: 201 });
+    return NextResponse.json(jsonResponse);
   } catch (error) {
-    console.error("Error uploading media:", error);
+    console.error("Upload error:", error);
     return NextResponse.json(
-      { error: "Failed to upload media" },
-      { status: 500 }
+      { error: error instanceof Error ? error.message : "Upload failed" },
+      { status: 400 }
     );
   }
 }
