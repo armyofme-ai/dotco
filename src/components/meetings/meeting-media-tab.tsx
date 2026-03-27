@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
 import {
   Camera,
   Loader2,
@@ -89,12 +88,22 @@ export function MeetingMediaTab({
       try {
         for (let i = 0; i < fileArray.length; i++) {
           const file = fileArray[i];
-          const type = file.type.startsWith("image/") ? "photo" : "audio";
 
-          await upload(`${type}/${file.name}`, file, {
-            access: "public",
-            handleUploadUrl: `/api/projects/${projectId}/meetings/${meetingId}/media`,
-          });
+          const res = await fetch(
+            `/api/projects/${projectId}/meetings/${meetingId}/media`,
+            {
+              method: "POST",
+              headers: {
+                "content-type": file.type,
+                "x-filename": file.name,
+              },
+              body: file,
+            }
+          );
+
+          if (!res.ok) {
+            console.error(`Failed to upload ${file.name}`);
+          }
 
           setUploadProgress(Math.round(((i + 1) / fileArray.length) * 100));
         }
