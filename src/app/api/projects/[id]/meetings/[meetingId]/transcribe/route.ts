@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { DeepgramClient } from "@deepgram/sdk";
 
 interface TranscriptSegment {
@@ -13,20 +14,25 @@ interface TranscriptSegment {
 
 export const maxDuration = 300;
 
-async function runTranscription(meetingId: string, mediaId: string, audioUrl: string) {
+// Generate a unique run ID to prevent zombie writes from old deployments
+function generateRunId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function runTranscription(meetingId: string, mediaId: string, audioUrl: string, runId: string) {
   try {
-    // Mark meeting as "transcribing"
+    // Mark meeting as transcribing with this run's ID
     await prisma.meeting.update({
       where: { id: meetingId },
-      data: { transcription: "__TRANSCRIBING__" },
+      data: { transcription: `__TRANSCRIBING__${runId}` },
     });
 
-    // Download file and send buffer to Deepgram (more reliable than URL for large files)
-    console.log(`Downloading audio from ${audioUrl}...`);
+    // Download file and send buffer to Deepgram
+    console.log(`[${runId}] Downloading audio from ${audioUrl}...`);
     const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
     const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-    console.log(`Downloaded ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB, sending to Deepgram...`);
+    console.log(`[${runId}] Downloaded ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB, sending to Deepgram...`);
 
     const deepgram = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY! });
     const result = await deepgram.listen.v1.media.transcribeFile(
@@ -42,9 +48,37 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
     );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resultAny = result as any;
-    const utterances = resultAny?.results?.utterances ?? [];
-    console.log(`Deepgram returned ${utterances.length} utterances`);
+    const utterances = (result as any)?.results?.utterances ?? [];
+    console.log(`[${runId}] Deepgram returned ${utterances.length} utterances`);
+
+    // Reject partial results — an 83-min file should have hundreds of utterances
+    if (utterances.length < 5) {
+      console.error(`[${runId}] Deepgram returned suspiciously few utterances (${utterances.length}). Rejecting.`);
+      // Check we still own this run before clearing
+      const current = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { transcription: true } });
+      if (current?.transcription === `__TRANSCRIBING__${runId}`) {
+        await prisma.meeting.update({
+          where: { id: meetingId },
+          data: {
+            transcription: null,
+            transcriptSegments: Prisma.DbNull,
+            speakerMap: Prisma.DbNull,
+            transcribedMediaId: null,
+          },
+        });
+      }
+      return;
+    }
+
+    // Verify this run still owns the transcription (prevent zombie writes)
+    const current = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { transcription: true },
+    });
+    if (!current?.transcription?.includes(runId)) {
+      console.log(`[${runId}] Another transcription run took over. Aborting save.`);
+      return;
+    }
 
     const transcriptSegments: TranscriptSegment[] = utterances.map(
       (u: { speaker: number; transcript: string; start: number; end: number }) => ({
@@ -75,18 +109,30 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
       },
     });
 
-    console.log(`Transcription complete for meeting ${meetingId}: ${transcriptSegments.length} segments`);
+    console.log(`[${runId}] Transcription complete: ${transcriptSegments.length} segments`);
   } catch (error) {
-    console.error(`Transcription failed for meeting ${meetingId}:`, error);
-    // Clear the transcribing marker on failure
-    await prisma.meeting.update({
-      where: { id: meetingId },
-      data: { transcription: null },
-    }).catch(() => {});
+    console.error(`[${runId}] Transcription failed:`, error);
+    // Only clear if we still own this run
+    try {
+      const current = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { transcription: true } });
+      if (current?.transcription?.includes(runId)) {
+        await prisma.meeting.update({
+          where: { id: meetingId },
+          data: {
+            transcription: null,
+            transcriptSegments: Prisma.DbNull,
+            speakerMap: Prisma.DbNull,
+            transcribedMediaId: null,
+          },
+        });
+      }
+    } catch {
+      // ignore cleanup errors
+    }
   }
 }
 
-// POST - Start transcription (returns immediately, runs in background)
+// POST - Start transcription
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; meetingId: string }> }
@@ -120,10 +166,10 @@ export async function POST(
       return NextResponse.json({ error: "Invalid audio media" }, { status: 400 });
     }
 
-    // Run transcription in the background after response is sent
-    after(() => runTranscription(meetingId, mediaId, media.url));
+    const runId = generateRunId();
+    after(() => runTranscription(meetingId, mediaId, media.url, runId));
 
-    return NextResponse.json({ status: "transcribing" });
+    return NextResponse.json({ status: "transcribing", runId });
   } catch (error) {
     console.error("Error starting transcription:", error);
     return NextResponse.json({ error: "Failed to start transcription" }, { status: 500 });
@@ -151,7 +197,7 @@ export async function GET(
       return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
     }
 
-    if (meeting.transcription === "__TRANSCRIBING__") {
+    if (meeting.transcription?.startsWith("__TRANSCRIBING__")) {
       return NextResponse.json({ status: "transcribing" });
     }
 
