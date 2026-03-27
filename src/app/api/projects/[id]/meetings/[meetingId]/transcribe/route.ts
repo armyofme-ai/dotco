@@ -10,6 +10,8 @@ interface TranscriptSegment {
   endTime: number;
 }
 
+export const maxDuration = 300; // 5 minutes for large audio files
+
 // POST /api/projects/[id]/meetings/[meetingId]/transcribe - Transcribe audio via Deepgram
 export async function POST(
   request: NextRequest,
@@ -87,21 +89,11 @@ export async function POST(
       );
     }
 
-    // Fetch audio from URL (Vercel Blob or local)
-    const audioResponse = await fetch(media.url);
-    if (!audioResponse.ok) {
-      return NextResponse.json(
-        { error: "Failed to fetch audio file" },
-        { status: 500 }
-      );
-    }
-    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-
-    // Send to Deepgram for transcription
+    // Send URL directly to Deepgram (avoids downloading large files into memory)
     const deepgram = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY! });
-    const result = await deepgram.listen.v1.media.transcribeFile(
-      audioBuffer,
+    const result = await deepgram.listen.v1.media.transcribeUrl(
       {
+        url: media.url,
         model: "nova-3",
         diarize: true,
         smart_format: true,
@@ -145,6 +137,7 @@ export async function POST(
         transcription,
         transcriptSegments: transcriptSegments as unknown as undefined,
         speakerMap: speakerMap as unknown as undefined,
+        transcribedMediaId: mediaId,
       },
       include: {
         attendees: {

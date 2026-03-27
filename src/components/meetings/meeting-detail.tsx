@@ -91,6 +91,7 @@ interface MeetingData {
   summary: string | null;
   transcriptSegments: TranscriptSegment[] | null;
   speakerMap: Record<string, string> | null;
+  transcribedMediaId: string | null;
   attendees: Attendee[];
   media: MediaItem[];
   meetingPoints: MeetingPoint[];
@@ -309,7 +310,11 @@ export function MeetingDetail({ projectId, meetingId }: MeetingDetailProps) {
             meetingId={meetingId}
             transcriptSegments={meeting.transcriptSegments}
             speakerMap={meeting.speakerMap}
-            audioUrl={meeting.media.find((m) => m.type === "audio")?.url ?? null}
+            audioUrl={
+              (meeting.transcribedMediaId
+                ? meeting.media.find((m) => m.id === meeting.transcribedMediaId)?.url
+                : meeting.media.find((m) => m.type === "audio")?.url) ?? null
+            }
             onMeetingChange={fetchMeeting}
             onSummarizeComplete={handleSummarizeComplete}
           />

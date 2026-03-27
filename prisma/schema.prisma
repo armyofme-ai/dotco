@@ -165,6 +165,8 @@ model Meeting {
   transcriptSegments Json?
   // Maps speaker IDs to names: {"speaker_0": "John", "speaker_1": "Jane"}
   speakerMap         Json?
+  // ID of the audio media file that was transcribed
+  transcribedMediaId String?
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
