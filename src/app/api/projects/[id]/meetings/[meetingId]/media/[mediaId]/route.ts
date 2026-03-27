@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { unlink } from "fs/promises";
-import path from "path";
+import { del } from "@vercel/blob";
 
 // DELETE /api/projects/[id]/meetings/[meetingId]/media/[mediaId] - Delete media
 export async function DELETE(
@@ -55,13 +54,13 @@ export async function DELETE(
       );
     }
 
-    // Try to delete the file from disk
+    // Delete from Vercel Blob (or ignore if local/old URL)
     try {
-      const filePath = path.join(process.cwd(), media.url);
-      await unlink(filePath);
+      if (media.url.includes("blob.vercel-storage.com")) {
+        await del(media.url);
+      }
     } catch {
-      // File might not exist on disk, continue with DB deletion
-      console.warn("Could not delete file from disk:", media.url);
+      console.warn("Could not delete blob:", media.url);
     }
 
     await prisma.media.delete({ where: { id: mediaId } });

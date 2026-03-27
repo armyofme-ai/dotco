@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DeepgramClient } from "@deepgram/sdk";
-import { readFile } from "fs/promises";
-import path from "path";
 
 interface TranscriptSegment {
   speaker: string;
@@ -89,9 +87,15 @@ export async function POST(
       );
     }
 
-    // Read the audio file from disk
-    const filePath = path.join(process.cwd(), media.url);
-    const audioBuffer = await readFile(filePath);
+    // Fetch audio from URL (Vercel Blob or local)
+    const audioResponse = await fetch(media.url);
+    if (!audioResponse.ok) {
+      return NextResponse.json(
+        { error: "Failed to fetch audio file" },
+        { status: 500 }
+      );
+    }
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
 
     // Send to Deepgram for transcription
     const deepgram = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY! });

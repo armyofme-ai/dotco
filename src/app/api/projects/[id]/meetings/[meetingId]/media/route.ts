@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { put } from "@vercel/blob";
 import { v4 as uuidv4 } from "uuid";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -75,22 +77,18 @@ export async function POST(
     }
 
     const type = mimeType.startsWith("image/") ? "photo" : "audio";
-    const uploadDir = path.join(process.cwd(), "uploads", type);
-    await mkdir(uploadDir, { recursive: true });
+    const blobPath = `${type}/${uuidv4()}-${file.name}`;
 
-    const uniqueFilename = `${uuidv4()}-${file.name}`;
-    const filePath = path.join(uploadDir, uniqueFilename);
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
-
-    const url = `/uploads/${type}/${uniqueFilename}`;
+    // Upload to Vercel Blob
+    const blob = await put(blobPath, file, {
+      access: "public",
+      contentType: mimeType,
+    });
 
     const media = await prisma.media.create({
       data: {
         filename: file.name,
-        url,
+        url: blob.url,
         type,
         size: file.size,
         mimeType,
