@@ -147,6 +147,9 @@ export async function POST(
         },
         select: { id: true, email: true, name: true },
       });
+      const attendeesList = usersToNotify
+        .filter((u) => u.email)
+        .map((u) => ({ name: u.name || "there", email: u.email! }));
       for (const u of usersToNotify) {
         if (u.email) {
           notifyMeetingInvite(
@@ -159,7 +162,10 @@ export async function POST(
             date,
             startTime,
             endTime,
-            session.user.name || "Someone"
+            session.user.name || "Someone",
+            session.user.email || undefined,
+            session.user.name || undefined,
+            attendeesList
           ).catch(console.error);
         }
       }

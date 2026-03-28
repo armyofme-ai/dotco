@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyMeetingTranscriptReady } from "@/lib/email";
 import OpenAI from "openai";
 
 interface TranscriptSegment {
@@ -293,6 +294,25 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
         },
       },
     });
+
+    // Notify attendees that transcript is ready (excluding current user)
+    if (updatedMeeting) {
+      for (const attendee of updatedMeeting.attendees) {
+        if (
+          attendee.user.id !== session.user.id &&
+          attendee.user.email
+        ) {
+          notifyMeetingTranscriptReady(
+            attendee.user.email,
+            attendee.user.name || "there",
+            updatedMeeting.name,
+            project.name,
+            id,
+            meetingId
+          ).catch(console.error);
+        }
+      }
+    }
 
     return NextResponse.json(updatedMeeting);
   } catch (error) {
