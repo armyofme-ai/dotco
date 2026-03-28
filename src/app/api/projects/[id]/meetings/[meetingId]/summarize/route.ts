@@ -104,7 +104,14 @@ export async function POST(
       .map((a) => `- ${a.user.name} (username: ${a.user.username}, id: ${a.user.id})`)
       .join("\n");
 
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+    const meetingDateStr = meeting.date.toISOString().split("T")[0];
+
     const promptText = `You are analyzing a meeting transcript. The meeting is titled "${meeting.name}".
+
+Today's date is ${todayStr}.
+This meeting took place on ${meetingDateStr}.
 
 Meeting attendees:
 ${attendeeList || "No attendees listed."}
@@ -128,7 +135,7 @@ Important guidelines:
 - For meetingPoints, extract all significant discussion topics. Each should have a concise title and a fuller description.
 - For nextSteps, identify all action items, tasks, and commitments made during the meeting. Match assignees to the actual meeting attendees listed above when possible. Use the attendee's exact name as it appears in the attendee list.
 - If a next step doesn't have a clear assignee, set assignee to null.
-- If a next step doesn't have a clear due date, set dueDate to null.
+- If a next step doesn't have a clear due date, set dueDate to null. When suggesting due dates, use dates relative to today (${todayStr}). All dates MUST be in the future (${todayStr} or later).
 
 Return ONLY the JSON object, with no additional text or markdown formatting.`;
 
@@ -208,7 +215,6 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
       const assignedTasks: { assigneeId: string; description: string; dueDate: string | null }[] = [];
 
       if (parsed.nextSteps && parsed.nextSteps.length > 0) {
-        const today = new Date();
 
         for (let index = 0; index < parsed.nextSteps.length; index++) {
           const step = parsed.nextSteps[index];
@@ -231,9 +237,13 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
           });
 
           // Create a corresponding Task in the project
-          const taskEndDate = step.dueDate
+          let taskEndDate = step.dueDate
             ? new Date(step.dueDate)
             : new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+          // Guardrail: if AI returned a past date, default to 7 days from now
+          if (taskEndDate < today) {
+            taskEndDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+          }
 
           const task = await tx.task.create({
             data: {
