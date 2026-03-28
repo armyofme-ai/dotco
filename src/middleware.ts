@@ -10,6 +10,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/uploads") ||
+    pathname.startsWith("/api/mcp") ||
     pathname === "/favicon.ico";
 
   if (isPublicRoute) {
