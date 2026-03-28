@@ -10,6 +10,12 @@ const baseUrl =
   process.env.AUTH_URL ||
   "http://localhost:3001";
 
+/** Convert a UTC ISO datetime to YYYY-MM-DD in a given timezone */
+function toLocalDate(isoOrDate: string, timezone: string): string {
+  const d = new Date(isoOrDate);
+  return d.toLocaleDateString("en-CA", { timeZone: timezone }); // en-CA → YYYY-MM-DD
+}
+
 interface EmailAttachment {
   filename: string;
   content: Buffer;
@@ -119,8 +125,7 @@ export async function notifyMeetingInvite(
   const url = `${baseUrl}/projects/${projectId}/meetings/${meetingId}`;
   const tz = timezone || "Europe/Madrid";
   const tzShort = tz.split("/").pop()?.replace(/_/g, " ") || tz;
-  // Format date for display: "2026-03-30T22:00:00.000Z" or "2026-03-30" → "March 30, 2026"
-  const dateOnly = date.includes("T") ? date.split("T")[0] : date;
+  const dateOnly = toLocalDate(date, tz);
   const displayDate = new Date(dateOnly + "T12:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
   const attachments: EmailAttachment[] = [];
@@ -177,7 +182,7 @@ export async function notifyMeetingUpdated(
   const url = `${baseUrl}/projects/${projectId}/meetings/${meetingId}`;
   const tz = timezone || "Europe/Madrid";
   const tzShort = tz.split("/").pop()?.replace(/_/g, " ") || tz;
-  const dateOnly = date.includes("T") ? date.split("T")[0] : date;
+  const dateOnly = toLocalDate(date, tz);
   const displayDate = new Date(dateOnly + "T12:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
   const icsString = generateMeetingIcs({
@@ -244,10 +249,11 @@ export async function notifyMeetingCancelled(
   timezone?: string
 ) {
   const tz = timezone || "Europe/Madrid";
+  const localDate = toLocalDate(meetingDate, tz);
   const icsString = generateMeetingCancelIcs({
     uid: `meeting-${meetingId}@dotco`,
     title: meetingName,
-    startDate: meetingDate,
+    startDate: localDate,
     startTime: meetingStartTime,
     endTime: meetingEndTime,
     timezone: tz,
