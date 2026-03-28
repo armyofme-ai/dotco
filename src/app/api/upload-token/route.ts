@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     token,
     pathname,
     allowedContentTypes: ["image/*", "audio/*"],
-    maximumSizeInBytes: 50 * 1024 * 1024,
+    maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
   });
 
   return NextResponse.json({ clientToken });
