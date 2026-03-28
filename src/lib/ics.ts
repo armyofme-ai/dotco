@@ -29,6 +29,7 @@ interface MeetingIcsParams {
   organizer: { name: string; email: string };
   attendees: { name: string; email: string }[];
   url: string;
+  sequence?: number;
 }
 
 export function generateMeetingIcs(params: MeetingIcsParams): string {
@@ -43,12 +44,14 @@ export function generateMeetingIcs(params: MeetingIcsParams): string {
     organizer,
     attendees,
     url,
+    sequence,
   } = params;
 
   const dt = toLocalDateTime(startDate, startTime);
   const dtEnd = toLocalDateTime(startDate, endTime);
   const stamp = nowStamp();
   const tz = timezone || "Europe/Madrid";
+  const seq = sequence ?? 0;
 
   const attendeeLines = attendees
     .map(
@@ -72,7 +75,7 @@ export function generateMeetingIcs(params: MeetingIcsParams): string {
     `ORGANIZER;CN=${organizer.name}:mailto:${organizer.email}`,
     attendeeLines,
     `URL:${url}`,
-    "SEQUENCE:0",
+    `SEQUENCE:${seq}`,
     "STATUS:CONFIRMED",
     "END:VEVENT",
     "END:VCALENDAR",

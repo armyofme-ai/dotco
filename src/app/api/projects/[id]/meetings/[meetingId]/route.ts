@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { del } from "@vercel/blob";
-import { notifyMeetingInvite, notifyMeetingCancelled } from "@/lib/email";
+import { notifyMeetingInvite, notifyMeetingUpdated, notifyMeetingCancelled } from "@/lib/email";
 
 // GET /api/projects/[id]/meetings/[meetingId] - Get full meeting with all relations
 export async function GET(
@@ -156,12 +156,14 @@ export async function PATCH(
 
     // Handle attendees update: delete all existing and re-create
     let newAttendeeIds: string[] = [];
+    let removedAttendeeIds: string[] = [];
     if (attendeeIds !== undefined) {
       const oldAttendees = await prisma.meetingAttendee.findMany({
         where: { meetingId },
         select: { userId: true },
       });
       const oldIds = new Set(oldAttendees.map((a) => a.userId));
+      const newIds = new Set(attendeeIds as string[]);
 
       await prisma.meetingAttendee.deleteMany({ where: { meetingId } });
       if (attendeeIds.length > 0) {
@@ -174,9 +176,18 @@ export async function PATCH(
       }
 
       newAttendeeIds = attendeeIds.filter(
-        (uid: string) => !oldIds.has(uid) && uid !== session.user.id
+        (uid: string) => !oldIds.has(uid)
+      );
+      removedAttendeeIds = [...oldIds].filter(
+        (uid) => !newIds.has(uid)
       );
     }
+
+    // Check if date/time changed
+    const dateTimeChanged =
+      (date !== undefined && new Date(date).toISOString() !== existingMeeting.date.toISOString()) ||
+      (startTime !== undefined && startTime !== existingMeeting.startTime) ||
+      (endTime !== undefined && endTime !== existingMeeting.endTime);
 
     const meeting = await prisma.meeting.update({
       where: { id: meetingId },
@@ -212,40 +223,70 @@ export async function PATCH(
       },
     });
 
-    // Notify newly added attendees
+    // Fetch org timezone for notifications
+    const org = await prisma.organization.findUnique({
+      where: { id: project.organizationId },
+      select: { timezone: true },
+    });
+    const meetingName = name ?? existingMeeting.name;
+    const meetingDate = date ?? existingMeeting.date.toISOString();
+    const meetingStart = startTime ?? existingMeeting.startTime;
+    const meetingEnd = endTime ?? existingMeeting.endTime;
+
+    // Get all current attendees for the attendee list in .ics
+    const allAttendeeUsers = await prisma.user.findMany({
+      where: { id: { in: meeting.attendees.map((a: { userId: string }) => a.userId) } },
+      select: { id: true, email: true, name: true },
+    });
+    const attendeesList = allAttendeeUsers
+      .filter((u) => u.email)
+      .map((u) => ({ name: u.name || "there", email: u.email }));
+
+    // 1. Notify NEW attendees (invite)
     if (newAttendeeIds.length > 0) {
-      const org = await prisma.organization.findUnique({
-        where: { id: project.organizationId },
-        select: { timezone: true },
-      });
-      const usersToNotify = await prisma.user.findMany({
-        where: { id: { in: newAttendeeIds } },
-        select: { id: true, email: true, name: true },
-      });
-      const meetingName = name ?? existingMeeting.name;
-      const meetingDate = date ?? existingMeeting.date.toISOString().split("T")[0];
-      const meetingStart = startTime ?? existingMeeting.startTime;
-      const meetingEnd = endTime ?? existingMeeting.endTime;
-      const attendeesList = usersToNotify
-        .filter((u) => u.email)
-        .map((u) => ({ name: u.name || "there", email: u.email! }));
-      for (const u of usersToNotify) {
+      const newUsers = allAttendeeUsers.filter((u) => newAttendeeIds.includes(u.id));
+      for (const u of newUsers) {
         if (u.email) {
           notifyMeetingInvite(
-            u.email,
-            u.name || "there",
-            meetingName,
-            project.name,
-            id,
-            meetingId,
-            meetingDate,
-            meetingStart,
-            meetingEnd,
-            session.user.name || "Someone",
-            session.user.email || undefined,
-            session.user.name || undefined,
-            attendeesList,
+            u.email, u.name || "there", meetingName, project.name, id, meetingId,
+            meetingDate, meetingStart, meetingEnd, session.user.name || "Someone",
+            session.user.email || undefined, session.user.name || undefined,
+            attendeesList, org?.timezone || undefined
+          ).catch(console.error);
+        }
+      }
+    }
+
+    // 2. Notify REMOVED attendees (cancel)
+    if (removedAttendeeIds.length > 0) {
+      const removedUsers = await prisma.user.findMany({
+        where: { id: { in: removedAttendeeIds } },
+        select: { id: true, email: true, name: true },
+      });
+      for (const u of removedUsers) {
+        if (u.email) {
+          notifyMeetingCancelled(
+            u.email, u.name || "there", meetingName, project.name, meetingId,
+            meetingDate, meetingStart, meetingEnd,
+            session.user.email || "", session.user.name || "Someone",
             org?.timezone || undefined
+          ).catch(console.error);
+        }
+      }
+    }
+
+    // 3. Notify EXISTING attendees if date/time changed (update)
+    if (dateTimeChanged) {
+      const existingAttendees = allAttendeeUsers.filter(
+        (u) => !newAttendeeIds.includes(u.id) // new ones already got an invite
+      );
+      for (const u of existingAttendees) {
+        if (u.email) {
+          notifyMeetingUpdated(
+            u.email, u.name || "there", meetingName, project.name, id, meetingId,
+            meetingDate, meetingStart, meetingEnd, session.user.name || "Someone",
+            session.user.email || "", session.user.name || "Someone",
+            attendeesList, org?.timezone || undefined
           ).catch(console.error);
         }
       }

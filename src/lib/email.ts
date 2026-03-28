@@ -158,6 +158,56 @@ export async function notifyMeetingInvite(
   );
 }
 
+export async function notifyMeetingUpdated(
+  userEmail: string,
+  userName: string,
+  meetingName: string,
+  projectName: string,
+  projectId: string,
+  meetingId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  updatedByName: string,
+  organizerEmail: string,
+  organizerName: string,
+  attendees: { name: string; email: string }[],
+  timezone?: string
+) {
+  const url = `${baseUrl}/projects/${projectId}/meetings/${meetingId}`;
+  const tz = timezone || "Europe/Madrid";
+  const tzShort = tz.split("/").pop()?.replace(/_/g, " ") || tz;
+  const dateOnly = date.includes("T") ? date.split("T")[0] : date;
+  const displayDate = new Date(dateOnly + "T12:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  const icsString = generateMeetingIcs({
+    uid: `meeting-${meetingId}@dotco`,
+    title: meetingName,
+    description: `Meeting in ${projectName}: ${meetingName}`,
+    startDate: dateOnly,
+    startTime,
+    endTime,
+    timezone: tz,
+    organizer: { name: organizerName, email: organizerEmail },
+    attendees,
+    url,
+    sequence: 1,
+  });
+
+  await sendEmail(
+    userEmail,
+    `Updated: ${meetingName}`,
+    `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+  <h2 style="color: #1a1a1a; font-size: 20px; margin-bottom: 8px;">Meeting Updated</h2>
+  <p style="color: #666; font-size: 14px; line-height: 1.6;">
+    Hi ${userName}, ${updatedByName} updated <strong>${meetingName}</strong> in <strong>${projectName}</strong>. The meeting is now on <strong>${displayDate}</strong> from <strong>${startTime}</strong> to <strong>${endTime}</strong> (${tzShort}).
+  </p>
+  <a href="${url}" style="display: inline-block; margin: 24px 0; padding: 10px 24px; background: #1a1a1a; color: #fff; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500;">View Meeting</a>
+</div>`,
+    [{ filename: "invite.ics", content: Buffer.from(icsString, "utf-8"), content_type: "application/ics" }]
+  );
+}
+
 export async function notifyMeetingTranscriptReady(
   userEmail: string,
   userName: string,
