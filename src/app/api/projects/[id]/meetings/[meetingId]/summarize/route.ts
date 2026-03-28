@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyMeetingTranscriptReady, notifyTaskAssigned } from "@/lib/email";
 import OpenAI from "openai";
 
 interface TranscriptSegment {
@@ -171,7 +172,8 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
     }
 
     // Update meeting summary, delete old points/steps, create new ones
-    await prisma.$transaction(async (tx) => {
+    // Transaction returns assigned tasks for notification
+    const assignedTasks = await prisma.$transaction(async (tx) => {
       // Update summary
       await tx.meeting.update({
         where: { id: meetingId },
@@ -203,6 +205,8 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
       }
 
       // Create new next steps and corresponding tasks
+      const assignedTasks: { assigneeId: string; description: string; dueDate: string | null }[] = [];
+
       if (parsed.nextSteps && parsed.nextSteps.length > 0) {
         const today = new Date();
 
@@ -250,10 +254,39 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
                 taskId: task.id,
               },
             });
+            assignedTasks.push({ assigneeId, description: step.description, dueDate: step.dueDate });
           }
         }
       }
+
+      return assignedTasks;
     });
+
+    // Notify assigned users (outside transaction)
+    if (Array.isArray(assignedTasks) && assignedTasks.length > 0) {
+      const userIds = [...new Set(assignedTasks.map((t) => t.assigneeId))];
+      const users = await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, email: true, name: true },
+      });
+      const userMap = new Map(users.map((u) => [u.id, u]));
+
+      for (const task of assignedTasks) {
+        if (task.assigneeId === session.user.id) continue;
+        const user = userMap.get(task.assigneeId);
+        if (user?.email) {
+          notifyTaskAssigned(
+            user.email,
+            user.name || "there",
+            task.description,
+            project.name,
+            id,
+            session.user.name || "Someone",
+            task.dueDate || undefined
+          ).catch(console.error);
+        }
+      }
+    }
 
     // Fetch the fully updated meeting
     const updatedMeeting = await prisma.meeting.findUnique({
@@ -293,6 +326,25 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
         },
       },
     });
+
+    // Notify attendees that transcript is ready (excluding current user)
+    if (updatedMeeting) {
+      for (const attendee of updatedMeeting.attendees) {
+        if (
+          attendee.user.id !== session.user.id &&
+          attendee.user.email
+        ) {
+          notifyMeetingTranscriptReady(
+            attendee.user.email,
+            attendee.user.name || "there",
+            updatedMeeting.name,
+            project.name,
+            id,
+            meetingId
+          ).catch(console.error);
+        }
+      }
+    }
 
     return NextResponse.json(updatedMeeting);
   } catch (error) {

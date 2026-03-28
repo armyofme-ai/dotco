@@ -186,7 +186,8 @@ export async function PATCH(
             project.name,
             id,
             session.user.name || "Someone",
-            dueDate
+            dueDate,
+            taskId
           ).catch(console.error);
         }
       }

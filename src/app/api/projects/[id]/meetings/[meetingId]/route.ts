@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { del } from "@vercel/blob";
-import { notifyMeetingInvite } from "@/lib/email";
+import { notifyMeetingInvite, notifyMeetingCancelled } from "@/lib/email";
 
 // GET /api/projects/[id]/meetings/[meetingId] - Get full meeting with all relations
 export async function GET(
@@ -214,6 +214,10 @@ export async function PATCH(
 
     // Notify newly added attendees
     if (newAttendeeIds.length > 0) {
+      const org = await prisma.organization.findUnique({
+        where: { id: project.organizationId },
+        select: { timezone: true },
+      });
       const usersToNotify = await prisma.user.findMany({
         where: { id: { in: newAttendeeIds } },
         select: { id: true, email: true, name: true },
@@ -222,6 +226,9 @@ export async function PATCH(
       const meetingDate = date ?? existingMeeting.date.toISOString().split("T")[0];
       const meetingStart = startTime ?? existingMeeting.startTime;
       const meetingEnd = endTime ?? existingMeeting.endTime;
+      const attendeesList = usersToNotify
+        .filter((u) => u.email)
+        .map((u) => ({ name: u.name || "there", email: u.email! }));
       for (const u of usersToNotify) {
         if (u.email) {
           notifyMeetingInvite(
@@ -234,7 +241,11 @@ export async function PATCH(
             meetingDate,
             meetingStart,
             meetingEnd,
-            session.user.name || "Someone"
+            session.user.name || "Someone",
+            session.user.email || undefined,
+            session.user.name || undefined,
+            attendeesList,
+            org?.timezone || undefined
           ).catch(console.error);
         }
       }
@@ -277,6 +288,15 @@ export async function DELETE(
 
     const meeting = await prisma.meeting.findUnique({
       where: { id: meetingId },
+      include: {
+        attendees: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        },
+      },
     });
     if (!meeting) {
       return NextResponse.json(
@@ -319,6 +339,30 @@ export async function DELETE(
     });
 
     await prisma.meeting.delete({ where: { id: meetingId } });
+
+    // Notify attendees about cancellation (excluding the deleter)
+    const org = await prisma.organization.findUnique({
+      where: { id: project.organizationId },
+      select: { timezone: true },
+    });
+    const meetingDate = meeting.date.toISOString().split("T")[0];
+    for (const attendee of meeting.attendees) {
+      if (attendee.user.id !== session.user.id && attendee.user.email) {
+        notifyMeetingCancelled(
+          attendee.user.email,
+          attendee.user.name || "there",
+          meeting.name,
+          project.name,
+          meetingId,
+          meetingDate,
+          meeting.startTime,
+          meeting.endTime,
+          session.user.email || "",
+          session.user.name || "Someone",
+          org?.timezone || undefined
+        ).catch(console.error);
+      }
+    }
 
     return NextResponse.json({ message: "Meeting deleted" });
   } catch (error) {

@@ -141,12 +141,19 @@ export async function POST(
 
     // Notify attendees (excluding the creator)
     if (attendeeIds && attendeeIds.length > 0) {
+      const org = await prisma.organization.findUnique({
+        where: { id: project.organizationId },
+        select: { timezone: true },
+      });
       const usersToNotify = await prisma.user.findMany({
         where: {
           id: { in: attendeeIds.filter((uid: string) => uid !== session.user.id) },
         },
         select: { id: true, email: true, name: true },
       });
+      const attendeesList = usersToNotify
+        .filter((u) => u.email)
+        .map((u) => ({ name: u.name || "there", email: u.email! }));
       for (const u of usersToNotify) {
         if (u.email) {
           notifyMeetingInvite(
@@ -159,7 +166,11 @@ export async function POST(
             date,
             startTime,
             endTime,
-            session.user.name || "Someone"
+            session.user.name || "Someone",
+            session.user.email || undefined,
+            session.user.name || undefined,
+            attendeesList,
+            org?.timezone || undefined
           ).catch(console.error);
         }
       }

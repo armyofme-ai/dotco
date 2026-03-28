@@ -158,7 +158,8 @@ export async function POST(
             project.name,
             id,
             session.user.name || "Someone",
-            endDate
+            endDate,
+            task.id
           ).catch(console.error);
         }
       }
