@@ -7,8 +7,10 @@ function escapeIcsText(text: string): string {
 }
 
 function toLocalDateTime(date: string, time: string): string {
-  // date is "YYYY-MM-DD", time is "HH:mm" — local time, NOT UTC
-  return `${date.replace(/-/g, "")}T${time.replace(":", "")}00`;
+  // date can be "YYYY-MM-DD" or full ISO "2026-03-30T22:00:00.000Z"
+  // Extract just the YYYY-MM-DD part
+  const dateOnly = date.includes("T") ? date.split("T")[0] : date;
+  return `${dateOnly.replace(/-/g, "")}T${time.replace(":", "")}00`;
 }
 
 function nowStamp(): string {
@@ -143,9 +145,10 @@ export function generateTaskIcs(params: TaskIcsParams): string {
 
   const stamp = nowStamp();
   // All-day event: use DATE value type (YYYYMMDD)
-  const dtStart = dueDate.replace(/-/g, "");
+  const dateOnly = dueDate.includes("T") ? dueDate.split("T")[0] : dueDate;
+  const dtStart = dateOnly.replace(/-/g, "");
   // All-day event ends the next day
-  const nextDay = new Date(dueDate + "T00:00:00Z");
+  const nextDay = new Date(dateOnly + "T00:00:00Z");
   nextDay.setUTCDate(nextDay.getUTCDate() + 1);
   const dtEnd = nextDay.toISOString().slice(0, 10).replace(/-/g, "");
 
