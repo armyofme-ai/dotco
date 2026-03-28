@@ -30,3 +30,27 @@ Use the meeting creator's actual email as ORGANIZER in the .ics. Gmail will send
 - `src/lib/email.ts` — `notifyMeetingInvite`, `notifyMeetingCancelled`
 - `src/app/api/projects/[id]/meetings/route.ts` — passes organizer info
 - `src/app/api/projects/[id]/meetings/[meetingId]/route.ts` — passes organizer info
+
+---
+
+## Two-way calendar sync
+
+**Status:** Open
+**Priority:** Low
+**Added:** 2026-03-28
+
+### Problem
+Calendar sync is one-way only: Dotco → Calendar. Changes made in Google Calendar or Outlook (reschedule, add/remove attendees, delete) do NOT flow back to Dotco. Dotco keeps stale data.
+
+### Current behavior
+- Dotco is the source of truth for meetings
+- Calendar events are informational copies
+- Users must make changes in Dotco, not in their calendar app
+
+### Ideal solution
+Integrate with Google Calendar API and/or Microsoft Graph API:
+1. OAuth2 connection per user (Settings > Connected Calendars)
+2. Two-way sync via webhooks/push notifications
+3. Conflict resolution (Dotco wins, or prompt user)
+
+This is a major feature, not a quick fix. Requires OAuth flows, token storage, per-user calendar connections, and ongoing sync logic.
