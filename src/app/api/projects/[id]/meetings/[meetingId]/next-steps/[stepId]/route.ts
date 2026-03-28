@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyTaskAssigned } from "@/lib/email";
 
 // PATCH /api/projects/[id]/meetings/[meetingId]/next-steps/[stepId] - Update a next step
 export async function PATCH(
@@ -128,6 +129,27 @@ export async function PATCH(
             data: { userId: assigneeId, taskId: matchingTask.id },
           });
         }
+      }
+    }
+
+    // Notify new assignee (only if changed to a different person)
+    if (assigneeId && assigneeId !== existingStep.assigneeId && assigneeId !== session.user.id) {
+      const assignee = await prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { email: true, name: true },
+      });
+      if (assignee?.email) {
+        const taskTitle = description ?? existingStep.description;
+        const taskDue = dueDate ?? (existingStep.dueDate ? existingStep.dueDate.toISOString().split("T")[0] : undefined);
+        notifyTaskAssigned(
+          assignee.email,
+          assignee.name || "there",
+          taskTitle,
+          project.name,
+          id,
+          session.user.name || "Someone",
+          taskDue || undefined
+        ).catch(console.error);
       }
     }
 

@@ -10,11 +10,17 @@ const baseUrl =
   process.env.AUTH_URL ||
   "http://localhost:3001";
 
+interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  content_type?: string;
+}
+
 async function sendEmail(
   to: string,
   subject: string,
   html: string,
-  attachments?: { filename: string; content: Buffer }[]
+  attachments?: EmailAttachment[]
 ) {
   if (!process.env.RESEND_API_KEY) return;
 
@@ -64,7 +70,7 @@ export async function notifyTaskAssigned(
     ? ` It's due on <strong>${dueDate}</strong>.`
     : "";
 
-  const attachments: { filename: string; content: Buffer }[] = [];
+  const attachments: EmailAttachment[] = [];
   if (taskId && dueDate) {
     const icsString = generateTaskIcs({
       uid: `task-${taskId}@dotco`,
@@ -76,6 +82,7 @@ export async function notifyTaskAssigned(
     attachments.push({
       filename: "task.ics",
       content: Buffer.from(icsString, "utf-8"),
+      content_type: "application/ics",
     });
   }
 
@@ -110,7 +117,7 @@ export async function notifyMeetingInvite(
 ) {
   const url = `${baseUrl}/projects/${projectId}/meetings/${meetingId}`;
 
-  const attachments: { filename: string; content: Buffer }[] = [];
+  const attachments: EmailAttachment[] = [];
   if (organizerEmail && organizerName && attendees) {
     const icsString = generateMeetingIcs({
       uid: `meeting-${meetingId}@dotco`,
@@ -126,6 +133,7 @@ export async function notifyMeetingInvite(
     attachments.push({
       filename: "invite.ics",
       content: Buffer.from(icsString, "utf-8"),
+      content_type: "application/ics",
     });
   }
 
@@ -196,6 +204,6 @@ export async function notifyMeetingCancelled(
     Hi ${userName}, ${organizerName} has cancelled <strong>${meetingName}</strong> in <strong>${projectName}</strong>.
   </p>
 </div>`,
-    [{ filename: "cancel.ics", content: Buffer.from(icsString, "utf-8") }]
+    [{ filename: "cancel.ics", content: Buffer.from(icsString, "utf-8"), content_type: "application/ics" }]
   );
 }

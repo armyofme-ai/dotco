@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyTaskAssigned } from "@/lib/email";
 
 // GET /api/projects/[id]/meetings/[meetingId]/next-steps - List next steps
 export async function GET(
@@ -157,6 +158,25 @@ export async function POST(
 
       return [step];
     });
+
+    // Notify assignee
+    if (assigneeId && assigneeId !== session.user.id) {
+      const assignee = await prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { email: true, name: true },
+      });
+      if (assignee?.email) {
+        notifyTaskAssigned(
+          assignee.email,
+          assignee.name || "there",
+          description,
+          project.name,
+          id,
+          session.user.name || "Someone",
+          dueDate || undefined
+        ).catch(console.error);
+      }
+    }
 
     return NextResponse.json(nextStep, { status: 201 });
   } catch (error) {
