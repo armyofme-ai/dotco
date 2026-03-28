@@ -214,6 +214,10 @@ export async function PATCH(
 
     // Notify newly added attendees
     if (newAttendeeIds.length > 0) {
+      const org = await prisma.organization.findUnique({
+        where: { id: project.organizationId },
+        select: { timezone: true },
+      });
       const usersToNotify = await prisma.user.findMany({
         where: { id: { in: newAttendeeIds } },
         select: { id: true, email: true, name: true },
@@ -240,7 +244,8 @@ export async function PATCH(
             session.user.name || "Someone",
             session.user.email || undefined,
             session.user.name || undefined,
-            attendeesList
+            attendeesList,
+            org?.timezone || undefined
           ).catch(console.error);
         }
       }
@@ -336,6 +341,10 @@ export async function DELETE(
     await prisma.meeting.delete({ where: { id: meetingId } });
 
     // Notify attendees about cancellation (excluding the deleter)
+    const org = await prisma.organization.findUnique({
+      where: { id: project.organizationId },
+      select: { timezone: true },
+    });
     const meetingDate = meeting.date.toISOString().split("T")[0];
     for (const attendee of meeting.attendees) {
       if (attendee.user.id !== session.user.id && attendee.user.email) {
@@ -349,7 +358,8 @@ export async function DELETE(
           meeting.startTime,
           meeting.endTime,
           session.user.email || "",
-          session.user.name || "Someone"
+          session.user.name || "Someone",
+          org?.timezone || undefined
         ).catch(console.error);
       }
     }

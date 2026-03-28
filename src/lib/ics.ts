@@ -6,9 +6,9 @@ function escapeIcsText(text: string): string {
     .replace(/\n/g, "\\n");
 }
 
-function toUtc(date: string, time: string): string {
-  // date is "YYYY-MM-DD", time is "HH:mm"
-  return `${date.replace(/-/g, "")}T${time.replace(":", "")}00Z`;
+function toLocalDateTime(date: string, time: string): string {
+  // date is "YYYY-MM-DD", time is "HH:mm" — local time, NOT UTC
+  return `${date.replace(/-/g, "")}T${time.replace(":", "")}00`;
 }
 
 function nowStamp(): string {
@@ -23,6 +23,7 @@ interface MeetingIcsParams {
   startDate: string;
   startTime: string;
   endTime: string;
+  timezone?: string;
   organizer: { name: string; email: string };
   attendees: { name: string; email: string }[];
   url: string;
@@ -36,14 +37,16 @@ export function generateMeetingIcs(params: MeetingIcsParams): string {
     startDate,
     startTime,
     endTime,
+    timezone,
     organizer,
     attendees,
     url,
   } = params;
 
-  const dtStart = toUtc(startDate, startTime);
-  const dtEnd = toUtc(startDate, endTime);
+  const dt = toLocalDateTime(startDate, startTime);
+  const dtEnd = toLocalDateTime(startDate, endTime);
   const stamp = nowStamp();
+  const tz = timezone || "Europe/Madrid";
 
   const attendeeLines = attendees
     .map(
@@ -60,8 +63,8 @@ export function generateMeetingIcs(params: MeetingIcsParams): string {
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `DTSTAMP:${stamp}`,
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
+    `DTSTART;TZID=${tz}:${dt}`,
+    `DTEND;TZID=${tz}:${dtEnd}`,
     `SUMMARY:${escapeIcsText(title)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `ORGANIZER;CN=${organizer.name}:mailto:${organizer.email}`,
@@ -82,6 +85,7 @@ interface MeetingCancelIcsParams {
   startDate: string;
   startTime: string;
   endTime: string;
+  timezone?: string;
   organizer: { name: string; email: string };
   attendees: { name: string; email: string }[];
 }
@@ -89,12 +93,13 @@ interface MeetingCancelIcsParams {
 export function generateMeetingCancelIcs(
   params: MeetingCancelIcsParams
 ): string {
-  const { uid, title, startDate, startTime, endTime, organizer, attendees } =
+  const { uid, title, startDate, startTime, endTime, timezone, organizer, attendees } =
     params;
 
-  const dtStart = toUtc(startDate, startTime);
-  const dtEnd = toUtc(startDate, endTime);
+  const dt = toLocalDateTime(startDate, startTime);
+  const dtEnd = toLocalDateTime(startDate, endTime);
   const stamp = nowStamp();
+  const tz = timezone || "Europe/Madrid";
 
   const attendeeLines = attendees
     .map(
@@ -111,8 +116,8 @@ export function generateMeetingCancelIcs(
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `DTSTAMP:${stamp}`,
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
+    `DTSTART;TZID=${tz}:${dt}`,
+    `DTEND;TZID=${tz}:${dtEnd}`,
     `SUMMARY:${escapeIcsText(title)}`,
     `ORGANIZER;CN=${organizer.name}:mailto:${organizer.email}`,
     attendeeLines,

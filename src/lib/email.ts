@@ -113,9 +113,12 @@ export async function notifyMeetingInvite(
   invitedByName: string,
   organizerEmail?: string,
   organizerName?: string,
-  attendees?: { name: string; email: string }[]
+  attendees?: { name: string; email: string }[],
+  timezone?: string
 ) {
   const url = `${baseUrl}/projects/${projectId}/meetings/${meetingId}`;
+  const tz = timezone || "Europe/Madrid";
+  const tzShort = tz.split("/").pop()?.replace(/_/g, " ") || tz;
 
   const attachments: EmailAttachment[] = [];
   if (organizerEmail && organizerName && attendees) {
@@ -126,6 +129,7 @@ export async function notifyMeetingInvite(
       startDate: date,
       startTime,
       endTime,
+      timezone: tz,
       organizer: { name: organizerName, email: organizerEmail },
       attendees,
       url,
@@ -143,7 +147,7 @@ export async function notifyMeetingInvite(
     `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
   <h2 style="color: #1a1a1a; font-size: 20px; margin-bottom: 8px;">Meeting Invitation</h2>
   <p style="color: #666; font-size: 14px; line-height: 1.6;">
-    Hi ${userName}, ${invitedByName} invited you to <strong>${meetingName}</strong> in <strong>${projectName}</strong> on <strong>${date}</strong> from <strong>${startTime}</strong> to <strong>${endTime}</strong>.
+    Hi ${userName}, ${invitedByName} invited you to <strong>${meetingName}</strong> in <strong>${projectName}</strong> on <strong>${date}</strong> from <strong>${startTime}</strong> to <strong>${endTime}</strong> (${tzShort}).
   </p>
   <a href="${url}" style="display: inline-block; margin: 24px 0; padding: 10px 24px; background: #1a1a1a; color: #fff; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500;">View Meeting</a>
 </div>`,
@@ -183,14 +187,17 @@ export async function notifyMeetingCancelled(
   meetingStartTime: string,
   meetingEndTime: string,
   organizerEmail: string,
-  organizerName: string
+  organizerName: string,
+  timezone?: string
 ) {
+  const tz = timezone || "Europe/Madrid";
   const icsString = generateMeetingCancelIcs({
     uid: `meeting-${meetingId}@dotco`,
     title: meetingName,
     startDate: meetingDate,
     startTime: meetingStartTime,
     endTime: meetingEndTime,
+    timezone: tz,
     organizer: { name: organizerName, email: organizerEmail },
     attendees: [{ name: userName, email: userEmail }],
   });

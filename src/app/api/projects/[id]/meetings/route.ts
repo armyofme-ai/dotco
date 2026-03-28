@@ -141,6 +141,10 @@ export async function POST(
 
     // Notify attendees (excluding the creator)
     if (attendeeIds && attendeeIds.length > 0) {
+      const org = await prisma.organization.findUnique({
+        where: { id: project.organizationId },
+        select: { timezone: true },
+      });
       const usersToNotify = await prisma.user.findMany({
         where: {
           id: { in: attendeeIds.filter((uid: string) => uid !== session.user.id) },
@@ -165,7 +169,8 @@ export async function POST(
             session.user.name || "Someone",
             session.user.email || undefined,
             session.user.name || undefined,
-            attendeesList
+            attendeesList,
+            org?.timezone || undefined
           ).catch(console.error);
         }
       }
