@@ -5,7 +5,8 @@ import { GeneralSettings } from "@/components/settings/general-settings";
 import { UsersSettings } from "@/components/settings/users-settings";
 import { InvitationsSettings } from "@/components/settings/invitations-settings";
 import { KanbanSettings } from "@/components/settings/kanban-settings";
-import { Building2, Users, Mail, Columns3 } from "lucide-react";
+import { ApiKeysSettings } from "@/components/settings/api-keys-settings";
+import { Building2, Users, Mail, Columns3, Key } from "lucide-react";
 
 export function SettingsView() {
   return (
@@ -18,6 +19,10 @@ export function SettingsView() {
         <TabsTrigger value="kanban">
           <Columns3 />
           Kanban
+        </TabsTrigger>
+        <TabsTrigger value="api-keys">
+          <Key />
+          API Keys
         </TabsTrigger>
         <TabsTrigger value="users">
           <Users />
@@ -35,6 +40,10 @@ export function SettingsView() {
 
       <TabsContent value="kanban">
         <KanbanSettings />
+      </TabsContent>
+
+      <TabsContent value="api-keys">
+        <ApiKeysSettings />
       </TabsContent>
 
       <TabsContent value="users">

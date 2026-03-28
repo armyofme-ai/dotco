@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { toolDefinitions, dispatchTool, ToolError } from "./tools";
+import bcrypt from "bcryptjs";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -46,39 +47,59 @@ function corsHeaders() {
 
 // ─── Auth ───────────────────────────────────────────────────────────
 
-function authenticate(request: NextRequest): boolean {
-  const apiKey = process.env.MCP_API_KEY;
-  if (!apiKey) return false;
-
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader) return false;
-
-  const [scheme, token] = authHeader.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !token) return false;
-
-  return token === apiKey;
+interface AuthResult {
+  authenticated: boolean;
+  organizationId?: string;
 }
 
-// ─── Resolve org (single-tenant: use first org) ────────────────────
+async function authenticate(request: NextRequest): Promise<AuthResult> {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader) return { authenticated: false };
 
-async function getOrgId(): Promise<string> {
-  const org = await prisma.organization.findFirst({
-    select: { id: true },
+  const [scheme, token] = authHeader.split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token) return { authenticated: false };
+
+  // Fetch all API keys (across all orgs, since we don't know which org yet)
+  const apiKeys = await prisma.apiKey.findMany({
+    select: {
+      id: true,
+      keyHash: true,
+      organizationId: true,
+    },
   });
-  if (!org) throw new Error("No organization found");
-  return org.id;
+
+  for (const apiKey of apiKeys) {
+    const match = await bcrypt.compare(token, apiKey.keyHash);
+    if (match) {
+      // Update lastUsedAt (fire and forget)
+      prisma.apiKey.update({
+        where: { id: apiKey.id },
+        data: { lastUsedAt: new Date() },
+      }).catch(() => {});
+
+      return {
+        authenticated: true,
+        organizationId: apiKey.organizationId,
+      };
+    }
+  }
+
+  return { authenticated: false };
 }
 
 // ─── Handler ────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   // Auth check
-  if (!authenticate(request)) {
+  const authResult = await authenticate(request);
+  if (!authResult.authenticated || !authResult.organizationId) {
     return Response.json(
       jsonRpcError(null, -32000, "Unauthorized: invalid or missing API key"),
       { status: 401, headers: corsHeaders() }
     );
   }
+
+  const orgId = authResult.organizationId;
 
   let body: JsonRpcRequest;
   try {
@@ -145,7 +166,6 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const orgId = await getOrgId();
         const toolArgs = params.arguments ?? {};
 
         try {
