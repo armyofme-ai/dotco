@@ -139,7 +139,7 @@ export async function POST(
       },
     });
 
-    // Notify attendees (excluding the creator)
+    // Notify all attendees (including creator, so it appears in their calendar)
     if (attendeeIds && attendeeIds.length > 0) {
       const org = await prisma.organization.findUnique({
         where: { id: project.organizationId },
@@ -147,7 +147,7 @@ export async function POST(
       });
       const usersToNotify = await prisma.user.findMany({
         where: {
-          id: { in: attendeeIds.filter((uid: string) => uid !== session.user.id) },
+          id: { in: attendeeIds },
         },
         select: { id: true, email: true, name: true },
       });
