@@ -43,29 +43,27 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
         smart_format: true,
         punctuate: true,
         paragraphs: true,
-        utterances: true,
+        detect_language: true,
       }
     );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resultAny = result as any;
-    const utterances = resultAny?.results?.utterances ?? [];
+    const words: { word: string; start: number; end: number; speaker: number; punctuated_word: string }[] =
+      resultAny?.results?.channels?.[0]?.alternatives?.[0]?.words ?? [];
     const audioDuration = resultAny?.metadata?.duration ?? 0;
-    const wordCount = resultAny?.results?.channels?.[0]?.alternatives?.[0]?.words?.length ?? 0;
+    const detectedLang = resultAny?.results?.channels?.[0]?.detected_language;
 
-    console.log(`[${runId}] Deepgram: ${utterances.length} utterances, ${wordCount} words, duration=${audioDuration}s`);
+    console.log(`[${runId}] Deepgram: ${words.length} words, duration=${audioDuration}s, language=${detectedLang}`);
 
-    // Quality check: for speech, expect at least ~2 words per second of audio.
-    // If Deepgram returns far fewer, the audio is likely music/silence/noise, not speech.
-    const expectedMinWords = Math.max(20, audioDuration * 0.5); // at least 0.5 words/sec
-    if (wordCount < expectedMinWords) {
-      console.error(`[${runId}] Insufficient speech detected: ${wordCount} words in ${audioDuration}s audio (expected >=${Math.round(expectedMinWords)}). The audio may not contain enough speech.`);
+    if (words.length < 20) {
+      console.error(`[${runId}] Insufficient speech: ${words.length} words in ${audioDuration}s`);
       const current = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { transcription: true } });
       if (current?.transcription?.includes(runId)) {
         await prisma.meeting.update({
           where: { id: meetingId },
           data: {
-            transcription: `__FAILED__Insufficient speech detected. Only ${wordCount} words found in ${Math.round(audioDuration / 60)} minutes of audio. The recording may contain mostly music, silence, or background noise. Try re-recording or using a higher quality export.`,
+            transcription: `__FAILED__Insufficient speech detected. Only ${words.length} words found in ${Math.round(audioDuration / 60)} minutes of audio. The recording may not contain enough speech.`,
             transcriptSegments: Prisma.DbNull,
             speakerMap: Prisma.DbNull,
             transcribedMediaId: null,
@@ -75,7 +73,7 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
       return;
     }
 
-    // Verify this run still owns the transcription (prevent zombie writes)
+    // Verify this run still owns the transcription
     const current = await prisma.meeting.findUnique({
       where: { id: meetingId },
       select: { transcription: true },
@@ -85,14 +83,38 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
       return;
     }
 
-    const transcriptSegments: TranscriptSegment[] = utterances.map(
-      (u: { speaker: number; transcript: string; start: number; end: number }) => ({
-        speaker: `Speaker ${u.speaker}`,
-        text: u.transcript,
-        startTime: u.start,
-        endTime: u.end,
-      })
-    );
+    // Group consecutive words by speaker into segments
+    const transcriptSegments: TranscriptSegment[] = [];
+    let currentSpeaker = words[0].speaker;
+    let currentWords: string[] = [words[0].punctuated_word || words[0].word];
+    let segStart = words[0].start;
+    let segEnd = words[0].end;
+
+    for (let i = 1; i < words.length; i++) {
+      const w = words[i];
+      if (w.speaker === currentSpeaker) {
+        currentWords.push(w.punctuated_word || w.word);
+        segEnd = w.end;
+      } else {
+        transcriptSegments.push({
+          speaker: `Speaker ${currentSpeaker}`,
+          text: currentWords.join(" "),
+          startTime: segStart,
+          endTime: segEnd,
+        });
+        currentSpeaker = w.speaker;
+        currentWords = [w.punctuated_word || w.word];
+        segStart = w.start;
+        segEnd = w.end;
+      }
+    }
+    // Push last segment
+    transcriptSegments.push({
+      speaker: `Speaker ${currentSpeaker}`,
+      text: currentWords.join(" "),
+      startTime: segStart,
+      endTime: segEnd,
+    });
 
     const transcription = transcriptSegments
       .map((seg) => `${seg.speaker}: ${seg.text}`)
