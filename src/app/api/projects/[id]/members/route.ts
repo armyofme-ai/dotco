@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyAddedToProject } from "@/lib/email";
 
 // GET /api/projects/[id]/members - List project members
 export async function GET(
@@ -124,6 +125,17 @@ export async function POST(
         },
       },
     });
+
+    // Notify the added user (skip if adding yourself)
+    if (userId !== session.user.id && user.email) {
+      notifyAddedToProject(
+        user.email,
+        user.name || "there",
+        project.name,
+        id,
+        session.user.name || "Someone"
+      ).catch(console.error);
+    }
 
     return NextResponse.json(member, { status: 201 });
   } catch (error) {

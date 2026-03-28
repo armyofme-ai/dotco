@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyMeetingInvite } from "@/lib/email";
 
 // GET /api/projects/[id]/meetings - List meetings for a project
 export async function GET(
@@ -137,6 +138,32 @@ export async function POST(
         },
       },
     });
+
+    // Notify attendees (excluding the creator)
+    if (attendeeIds && attendeeIds.length > 0) {
+      const usersToNotify = await prisma.user.findMany({
+        where: {
+          id: { in: attendeeIds.filter((uid: string) => uid !== session.user.id) },
+        },
+        select: { id: true, email: true, name: true },
+      });
+      for (const u of usersToNotify) {
+        if (u.email) {
+          notifyMeetingInvite(
+            u.email,
+            u.name || "there",
+            name,
+            project.name,
+            id,
+            meeting.id,
+            date,
+            startTime,
+            endTime,
+            session.user.name || "Someone"
+          ).catch(console.error);
+        }
+      }
+    }
 
     return NextResponse.json(meeting, { status: 201 });
   } catch (error) {

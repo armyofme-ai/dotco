@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { del } from "@vercel/blob";
+import { notifyMeetingInvite } from "@/lib/email";
 
 // GET /api/projects/[id]/meetings/[meetingId] - Get full meeting with all relations
 export async function GET(
@@ -154,7 +155,14 @@ export async function PATCH(
     if (summary !== undefined) data.summary = summary;
 
     // Handle attendees update: delete all existing and re-create
+    let newAttendeeIds: string[] = [];
     if (attendeeIds !== undefined) {
+      const oldAttendees = await prisma.meetingAttendee.findMany({
+        where: { meetingId },
+        select: { userId: true },
+      });
+      const oldIds = new Set(oldAttendees.map((a) => a.userId));
+
       await prisma.meetingAttendee.deleteMany({ where: { meetingId } });
       if (attendeeIds.length > 0) {
         await prisma.meetingAttendee.createMany({
@@ -164,6 +172,10 @@ export async function PATCH(
           })),
         });
       }
+
+      newAttendeeIds = attendeeIds.filter(
+        (uid: string) => !oldIds.has(uid) && uid !== session.user.id
+      );
     }
 
     const meeting = await prisma.meeting.update({
@@ -199,6 +211,34 @@ export async function PATCH(
         },
       },
     });
+
+    // Notify newly added attendees
+    if (newAttendeeIds.length > 0) {
+      const usersToNotify = await prisma.user.findMany({
+        where: { id: { in: newAttendeeIds } },
+        select: { id: true, email: true, name: true },
+      });
+      const meetingName = name ?? existingMeeting.name;
+      const meetingDate = date ?? existingMeeting.date.toISOString().split("T")[0];
+      const meetingStart = startTime ?? existingMeeting.startTime;
+      const meetingEnd = endTime ?? existingMeeting.endTime;
+      for (const u of usersToNotify) {
+        if (u.email) {
+          notifyMeetingInvite(
+            u.email,
+            u.name || "there",
+            meetingName,
+            project.name,
+            id,
+            meetingId,
+            meetingDate,
+            meetingStart,
+            meetingEnd,
+            session.user.name || "Someone"
+          ).catch(console.error);
+        }
+      }
+    }
 
     return NextResponse.json(meeting);
   } catch (error) {

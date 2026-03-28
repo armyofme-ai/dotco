@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TaskStatus } from "@/generated/prisma/client";
+import { notifyTaskAssigned } from "@/lib/email";
 
 // GET /api/projects/[id]/tasks/[taskId] - Get a single task
 export async function GET(
@@ -126,7 +127,14 @@ export async function PATCH(
     if (endDate !== undefined) data.endDate = new Date(endDate);
 
     // Handle assignees update: delete all existing and re-create
+    let newAssigneeIds: string[] = [];
     if (assigneeIds !== undefined) {
+      const oldAssignees = await prisma.taskAssignee.findMany({
+        where: { taskId },
+        select: { userId: true },
+      });
+      const oldIds = new Set(oldAssignees.map((a) => a.userId));
+
       await prisma.taskAssignee.deleteMany({ where: { taskId } });
       if (assigneeIds.length > 0) {
         await prisma.taskAssignee.createMany({
@@ -136,6 +144,10 @@ export async function PATCH(
           })),
         });
       }
+
+      newAssigneeIds = assigneeIds.filter(
+        (uid: string) => !oldIds.has(uid) && uid !== session.user.id
+      );
     }
 
     const task = await prisma.task.update({
@@ -156,6 +168,29 @@ export async function PATCH(
         },
       },
     });
+
+    // Notify newly added assignees
+    if (newAssigneeIds.length > 0) {
+      const usersToNotify = await prisma.user.findMany({
+        where: { id: { in: newAssigneeIds } },
+        select: { id: true, email: true, name: true },
+      });
+      const taskTitle = title ?? existingTask.title;
+      const dueDate = endDate ?? existingTask.endDate?.toISOString();
+      for (const u of usersToNotify) {
+        if (u.email) {
+          notifyTaskAssigned(
+            u.email,
+            u.name || "there",
+            taskTitle,
+            project.name,
+            id,
+            session.user.name || "Someone",
+            dueDate
+          ).catch(console.error);
+        }
+      }
+    }
 
     return NextResponse.json(task);
   } catch (error) {

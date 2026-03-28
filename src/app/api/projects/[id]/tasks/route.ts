@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TaskStatus } from "@/generated/prisma/client";
+import { notifyTaskAssigned } from "@/lib/email";
 
 // GET /api/projects/[id]/tasks - List tasks with assignees
 export async function GET(
@@ -139,6 +140,29 @@ export async function POST(
         },
       },
     });
+
+    // Notify assigned users (excluding the creator)
+    if (assigneeIds && assigneeIds.length > 0) {
+      const usersToNotify = await prisma.user.findMany({
+        where: {
+          id: { in: assigneeIds.filter((uid: string) => uid !== session.user.id) },
+        },
+        select: { id: true, email: true, name: true },
+      });
+      for (const u of usersToNotify) {
+        if (u.email) {
+          notifyTaskAssigned(
+            u.email,
+            u.name || "there",
+            title,
+            project.name,
+            id,
+            session.user.name || "Someone",
+            endDate
+          ).catch(console.error);
+        }
+      }
+    }
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
