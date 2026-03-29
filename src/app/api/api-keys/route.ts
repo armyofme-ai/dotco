@@ -12,13 +12,6 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "OWNER") {
-      return NextResponse.json(
-        { error: "Only owners can manage API keys" },
-        { status: 403 }
-      );
-    }
-
     const apiKeys = await prisma.apiKey.findMany({
       where: { organizationId: session.user.organizationId },
       select: {
@@ -55,12 +48,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "OWNER") {
-      return NextResponse.json(
-        { error: "Only owners can manage API keys" },
-        { status: 403 }
-      );
-    }
 
     const body = await request.json();
     const { name } = body;

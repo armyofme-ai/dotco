@@ -13,12 +13,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "OWNER") {
-      return NextResponse.json(
-        { error: "Only owners can manage API keys" },
-        { status: 403 }
-      );
-    }
+
 
     const { id } = await params;
 

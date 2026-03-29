@@ -10,17 +10,13 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
-  if (session.user.role !== "OWNER") {
-    redirect("/projects");
-  }
-
   return (
     <>
       <PageHeader
         title="Settings"
-        description="Manage your organization settings, team members, and invitations."
+        description="Manage your organization settings and integrations."
       />
-      <SettingsView />
+      <SettingsView role={session.user.role} />
     </>
   );
 }

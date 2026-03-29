@@ -8,51 +8,73 @@ import { KanbanSettings } from "@/components/settings/kanban-settings";
 import { ApiKeysSettings } from "@/components/settings/api-keys-settings";
 import { Building2, Users, Mail, Columns3, Key } from "lucide-react";
 
-export function SettingsView() {
+interface SettingsViewProps {
+  role: string;
+}
+
+export function SettingsView({ role }: SettingsViewProps) {
+  const isOwner = role === "OWNER";
+
   return (
-    <Tabs defaultValue="general">
+    <Tabs defaultValue={isOwner ? "general" : "api-keys"}>
       <TabsList variant="line" className="mb-6">
-        <TabsTrigger value="general">
-          <Building2 />
-          General
-        </TabsTrigger>
-        <TabsTrigger value="kanban">
-          <Columns3 />
-          Kanban
-        </TabsTrigger>
+        {isOwner && (
+          <TabsTrigger value="general">
+            <Building2 />
+            General
+          </TabsTrigger>
+        )}
+        {isOwner && (
+          <TabsTrigger value="kanban">
+            <Columns3 />
+            Kanban
+          </TabsTrigger>
+        )}
         <TabsTrigger value="api-keys">
           <Key />
           API Keys
         </TabsTrigger>
-        <TabsTrigger value="users">
-          <Users />
-          Users
-        </TabsTrigger>
-        <TabsTrigger value="invitations">
-          <Mail />
-          Invitations
-        </TabsTrigger>
+        {isOwner && (
+          <TabsTrigger value="users">
+            <Users />
+            Users
+          </TabsTrigger>
+        )}
+        {isOwner && (
+          <TabsTrigger value="invitations">
+            <Mail />
+            Invitations
+          </TabsTrigger>
+        )}
       </TabsList>
 
-      <TabsContent value="general">
-        <GeneralSettings />
-      </TabsContent>
+      {isOwner && (
+        <TabsContent value="general">
+          <GeneralSettings />
+        </TabsContent>
+      )}
 
-      <TabsContent value="kanban">
-        <KanbanSettings />
-      </TabsContent>
+      {isOwner && (
+        <TabsContent value="kanban">
+          <KanbanSettings />
+        </TabsContent>
+      )}
 
       <TabsContent value="api-keys">
         <ApiKeysSettings />
       </TabsContent>
 
-      <TabsContent value="users">
-        <UsersSettings />
-      </TabsContent>
+      {isOwner && (
+        <TabsContent value="users">
+          <UsersSettings />
+        </TabsContent>
+      )}
 
-      <TabsContent value="invitations">
-        <InvitationsSettings />
-      </TabsContent>
+      {isOwner && (
+        <TabsContent value="invitations">
+          <InvitationsSettings />
+        </TabsContent>
+      )}
     </Tabs>
   );
 }
