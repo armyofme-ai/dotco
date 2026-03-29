@@ -70,6 +70,29 @@ export function ApiKeysSettings() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "https://dotco.armyofme.ai";
+  const mcpUrl = `${appUrl}/api/mcp`;
+
+  const claudeCodeConfig = JSON.stringify({
+    mcpServers: {
+      dotco: {
+        type: "url",
+        url: mcpUrl,
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+      },
+    },
+  }, null, 2);
+
+  const claudeDesktopConfig = JSON.stringify({
+    mcpServers: {
+      dotco: {
+        type: "url",
+        url: mcpUrl,
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+      },
+    },
+  }, null, 2);
+
   // Generate dialog state
   const [generateOpen, setGenerateOpen] = useState(false);
   const [keyName, setKeyName] = useState("");
@@ -264,6 +287,76 @@ export function ApiKeysSettings() {
               )}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* Setup Instructions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Connect to Claude</CardTitle>
+          <CardDescription>
+            Connect your AI assistant to access your projects, meetings, transcripts, and tasks.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Steps */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Quick setup</h4>
+            <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
+              <li>Generate an API key above</li>
+              <li>Copy the configuration below</li>
+              <li>Replace <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">YOUR_API_KEY</code> with your key</li>
+              <li>Restart Claude</li>
+            </ol>
+          </div>
+
+          {/* Claude Code */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium">Claude Code</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(claudeCodeConfig);
+                  toast.success("Copied to clipboard");
+                }}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Copy className="size-3" />
+                Copy
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Add to your project&apos;s <code className="rounded bg-muted px-1 py-0.5 font-mono">.mcp.json</code> or global Claude Code settings
+            </p>
+            <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 font-mono text-xs leading-relaxed">
+              {claudeCodeConfig}
+            </pre>
+          </div>
+
+          {/* Claude Desktop */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium">Claude Desktop</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(claudeDesktopConfig);
+                  toast.success("Copied to clipboard");
+                }}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Copy className="size-3" />
+                Copy
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Add to <code className="rounded bg-muted px-1 py-0.5 font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code> (Mac)
+            </p>
+            <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 font-mono text-xs leading-relaxed">
+              {claudeDesktopConfig}
+            </pre>
+          </div>
         </CardContent>
       </Card>
 
