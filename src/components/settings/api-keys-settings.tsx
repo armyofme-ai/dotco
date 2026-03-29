@@ -86,9 +86,13 @@ export function ApiKeysSettings() {
   const claudeDesktopConfig = JSON.stringify({
     mcpServers: {
       dotco: {
-        type: "url",
-        url: mcpUrl,
-        headers: { Authorization: "Bearer YOUR_API_KEY" },
+        command: "npx",
+        args: [
+          "mcp-remote",
+          mcpUrl,
+          "--header",
+          "Authorization: Bearer YOUR_API_KEY",
+        ],
       },
     },
   }, null, 2);
@@ -351,7 +355,7 @@ export function ApiKeysSettings() {
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Add to <code className="rounded bg-muted px-1 py-0.5 font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code> (Mac)
+              Add to <code className="rounded bg-muted px-1 py-0.5 font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code> (Mac) or <code className="rounded bg-muted px-1 py-0.5 font-mono">%APPDATA%\Claude\claude_desktop_config.json</code> (Windows). Requires <code className="rounded bg-muted px-1 py-0.5 font-mono">npx mcp-remote</code> (installed automatically on first run).
             </p>
             <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 font-mono text-xs leading-relaxed">
               {claudeDesktopConfig}
