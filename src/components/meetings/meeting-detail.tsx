@@ -318,6 +318,8 @@ export function MeetingDetail({ projectId, meetingId }: MeetingDetailProps) {
             }
             onMeetingChange={fetchMeeting}
             onSummarizeComplete={handleSummarizeComplete}
+            projectMembers={members}
+            meetingAttendees={meeting.attendees}
           />
         </TabsContent>
 

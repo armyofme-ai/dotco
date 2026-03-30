@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveSpeakerName, resolveSpeakerUserId, parseSpeakerMap } from "@/lib/speaker-utils";
 
 interface TranscriptSegment {
   speaker: string;
@@ -72,7 +73,7 @@ export async function PATCH(
       transcription = transcriptSegments
         .map((seg) => {
           const displayName =
-            (speakerMap as Record<string, string>)[seg.speaker] ?? seg.speaker;
+            resolveSpeakerName(parseSpeakerMap(speakerMap)[seg.speaker] ?? seg.speaker);
           return `${displayName}: ${seg.text}`;
         })
         .join("\n\n");
@@ -119,6 +120,18 @@ export async function PATCH(
         },
       },
     });
+
+    // Update project speaker defaults
+    const parsedMap = parseSpeakerMap(speakerMap);
+    for (const [speakerLabel, entry] of Object.entries(parsedMap)) {
+      const name = resolveSpeakerName(entry);
+      const userId = resolveSpeakerUserId(entry);
+      await prisma.projectSpeakerDefault.upsert({
+        where: { projectId_speakerLabel: { projectId: id, speakerLabel } },
+        create: { projectId: id, speakerLabel, name, userId, confidence: "confirmed" },
+        update: { name, userId, confidence: "confirmed" },
+      });
+    }
 
     return NextResponse.json(updatedMeeting);
   } catch (error) {

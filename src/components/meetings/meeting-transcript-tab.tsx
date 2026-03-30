@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { SpeakerAssignCombobox } from "@/components/meetings/speaker-assign-combobox";
+import type { SpeakerMap, SpeakerEntry } from "@/lib/speaker-utils";
+import { resolveSpeakerName } from "@/lib/speaker-utils";
 
 interface TranscriptSegment {
   speaker: string;
@@ -29,6 +32,8 @@ interface MeetingTranscriptTabProps {
   transcriptionError?: string | null;
   onMeetingChange: () => void;
   onSummarizeComplete?: () => void;
+  projectMembers: { id: string; user: { id: string; name: string; avatar: string | null } }[];
+  meetingAttendees?: { userId: string; user: { id: string; name: string; avatar: string | null } }[];
 }
 
 const SPEAKER_COLORS = [
@@ -104,12 +109,13 @@ export function MeetingTranscriptTab({
   transcriptionError,
   onMeetingChange,
   onSummarizeComplete,
+  projectMembers,
+  meetingAttendees = [],
 }: MeetingTranscriptTabProps) {
-  const [localSpeakerMap, setLocalSpeakerMap] = useState<
-    Record<string, string>
-  >(speakerMap ?? {});
+  const [localSpeakerMap, setLocalSpeakerMap] = useState<SpeakerMap>(
+    (speakerMap as SpeakerMap) ?? {}
+  );
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
   const [summarizing, setSummarizing] = useState(false);
 
   // Audio player state
@@ -122,7 +128,7 @@ export function MeetingTranscriptTab({
   );
 
   useEffect(() => {
-    setLocalSpeakerMap(speakerMap ?? {});
+    setLocalSpeakerMap((speakerMap as SpeakerMap) ?? {});
   }, [speakerMap]);
 
   const hasTranscript =
@@ -139,14 +145,16 @@ export function MeetingTranscriptTab({
   });
 
   const getSpeakerName = useCallback(
-    (speakerId: string) => {
-      return localSpeakerMap[speakerId] || speakerId;
+    (speaker: string) => {
+      const entry = localSpeakerMap[speaker];
+      if (entry) return resolveSpeakerName(entry);
+      return speaker;
     },
     [localSpeakerMap]
   );
 
   const saveSpeakerMap = useCallback(
-    async (newMap: Record<string, string>) => {
+    async (newMap: SpeakerMap) => {
       try {
         const res = await fetch(
           `/api/projects/${projectId}/meetings/${meetingId}/speakers`,
@@ -167,35 +175,17 @@ export function MeetingTranscriptTab({
 
   const handleSpeakerClick = (speakerId: string) => {
     setEditingSpeaker(speakerId);
-    setEditValue(localSpeakerMap[speakerId] || speakerId);
   };
 
-  const handleSpeakerEditDone = () => {
-    if (editingSpeaker === null) return;
-
-    const trimmed = editValue.trim();
-    const newMap = { ...localSpeakerMap };
-
-    if (trimmed && trimmed !== editingSpeaker) {
-      newMap[editingSpeaker] = trimmed;
-    } else if (!trimmed || trimmed === editingSpeaker) {
-      // If cleared or same as original ID, remove override
-      delete newMap[editingSpeaker];
-    }
-
+  const handleSpeakerAssign = (speakerId: string, entry: SpeakerEntry) => {
+    const newMap = { ...localSpeakerMap, [speakerId]: entry };
     setLocalSpeakerMap(newMap);
     setEditingSpeaker(null);
-    setEditValue("");
     saveSpeakerMap(newMap);
   };
 
-  const handleSpeakerKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSpeakerEditDone();
-    } else if (e.key === "Escape") {
-      setEditingSpeaker(null);
-      setEditValue("");
-    }
+  const handleSpeakerCancel = () => {
+    setEditingSpeaker(null);
   };
 
   const handleSummarize = async () => {
@@ -378,6 +368,11 @@ export function MeetingTranscriptTab({
           const displayName = getSpeakerName(group.speaker);
           const isEditing = editingSpeaker === group.speaker;
           const isHovered = hoveredSegmentIndex === index;
+          const entry = localSpeakerMap[group.speaker];
+          const isSuggested =
+            typeof entry === "object" && entry.status === "suggested";
+          const isFirstForSpeaker =
+            index === grouped.findIndex((g) => g.speaker === group.speaker);
 
           return (
             <div
@@ -395,22 +390,21 @@ export function MeetingTranscriptTab({
 
               {/* Speaker + text */}
               <div className="flex flex-1 flex-col gap-1">
-                {isEditing && index === grouped.findIndex((g) => g.speaker === group.speaker) ? (
+                {isEditing && isFirstForSpeaker ? (
                   <div
                     onClickCapture={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
-                    <input
-                      autoFocus
-                      type="text"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => {
-                        // Delay to allow click events to process
-                        setTimeout(handleSpeakerEditDone, 150);
-                      }}
-                      onKeyDown={handleSpeakerKeyDown}
-                      className={`h-6 w-44 rounded-md border border-input bg-background px-2 py-0 text-xs font-medium outline-none focus:border-ring focus:ring-2 focus:ring-ring/50 ${color.text}`}
+                    <SpeakerAssignCombobox
+                      currentName={displayName}
+                      speakerId={group.speaker}
+                      projectMembers={projectMembers}
+                      meetingAttendees={meetingAttendees}
+                      onAssign={(newEntry) =>
+                        handleSpeakerAssign(group.speaker, newEntry)
+                      }
+                      onCancel={handleSpeakerCancel}
+                      speakerColor={color}
                     />
                   </div>
                 ) : (
@@ -422,10 +416,10 @@ export function MeetingTranscriptTab({
                       e.stopPropagation();
                       handleSpeakerClick(group.speaker);
                     }}
-                    className={`inline-flex w-fit cursor-text items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-opacity hover:opacity-80 ${color.bg} ${color.text}`}
+                    className={`inline-flex w-fit cursor-text items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-opacity hover:opacity-80 ${color.bg} ${color.text} ${isSuggested ? "border border-dashed " + color.border : ""}`}
                     title="Click to rename speaker"
                   >
-                    {isEditing ? editValue || displayName : displayName}
+                    {displayName}
                     <Pencil className="size-2.5 opacity-0 transition-opacity group-hover/segment:opacity-60" />
                   </span>
                 )}

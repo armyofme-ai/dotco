@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import { resolveSpeakerName, parseSpeakerMap } from "@/lib/speaker-utils";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -9,18 +10,17 @@ type TranscriptSegment = {
   endTime?: number;
 };
 
-type SpeakerMap = Record<string, string>;
-
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function applySpeakerMap(
   segments: TranscriptSegment[],
-  speakerMap: SpeakerMap | null
+  rawSpeakerMap: unknown
 ): TranscriptSegment[] {
-  if (!speakerMap) return segments;
+  const speakerMap = parseSpeakerMap(rawSpeakerMap);
+  if (Object.keys(speakerMap).length === 0) return segments;
   return segments.map((seg) => ({
     ...seg,
-    speaker: speakerMap[seg.speaker] ?? seg.speaker,
+    speaker: resolveSpeakerName(speakerMap[seg.speaker] ?? seg.speaker),
   }));
 }
 
@@ -478,7 +478,7 @@ export async function getMeetingTranscript(
   if (meeting.transcriptSegments && Array.isArray(meeting.transcriptSegments)) {
     const segments = applySpeakerMap(
       meeting.transcriptSegments as TranscriptSegment[],
-      meeting.speakerMap as SpeakerMap | null
+      meeting.speakerMap
     );
 
     return {
