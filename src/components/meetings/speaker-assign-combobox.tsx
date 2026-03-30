@@ -57,16 +57,6 @@ export function SpeakerAssignCombobox({
 
   const trimmed = search.trim();
 
-  // Check if the typed text matches any attendee or member name (case-insensitive)
-  const matchesExisting = useMemo(() => {
-    const lower = trimmed.toLowerCase();
-    if (!lower) return true;
-    return (
-      meetingAttendees.some((a) => a.user.name.toLowerCase().includes(lower)) ||
-      nonAttendeeMembers.some((m) => m.user.name.toLowerCase().includes(lower))
-    );
-  }, [trimmed, meetingAttendees, nonAttendeeMembers]);
-
   const handleSelectMember = (userId: string, name: string) => {
     onAssign({ name, userId, status: "confirmed" });
   };
@@ -145,7 +135,7 @@ export function SpeakerAssignCombobox({
               </CommandGroup>
             )}
 
-            {trimmed && !matchesExisting && (
+            {trimmed && (
               <CommandGroup heading="">
                 <CommandItem
                   value={`assign-custom-${trimmed}`}
