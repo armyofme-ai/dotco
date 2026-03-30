@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
+import ReactMarkdown from "react-markdown";
 import {
   CalendarDays,
   Check,
@@ -392,8 +393,8 @@ export function MeetingSummaryTab({
             </div>
           </div>
         ) : (
-          <div className="whitespace-pre-wrap rounded-lg border border-input p-4 text-sm leading-relaxed text-foreground">
-            {summary}
+          <div className="prose prose-sm max-w-none rounded-lg border border-input p-4 text-sm leading-relaxed text-foreground dark:prose-invert">
+            <ReactMarkdown>{summary}</ReactMarkdown>
           </div>
         )}
       </section>

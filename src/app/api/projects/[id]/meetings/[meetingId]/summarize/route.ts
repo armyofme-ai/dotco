@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notifyMeetingTranscriptReady, notifyTaskAssigned } from "@/lib/email";
 import OpenAI from "openai";
+
+export const maxDuration = 300;
 
 interface TranscriptSegment {
   speaker: string;
@@ -22,88 +25,37 @@ interface SummaryResponse {
   }[];
 }
 
-// POST /api/projects/[id]/meetings/[meetingId]/summarize - Summarize meeting via Claude
-export async function POST(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string; meetingId: string }> }
-) {
+async function runSummarization(id: string, meetingId: string, sessionUserId: string, sessionUserName: string) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { id, meetingId } = await params;
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { summary: "__SUMMARIZING__" },
+    });
 
     const project = await prisma.project.findUnique({
       where: { id },
       include: { organization: { select: { name: true } } },
     });
-    if (!project) {
-      return NextResponse.json(
-        { error: "Project not found" },
-        { status: 404 }
-      );
-    }
-
-    if (project.organizationId !== session.user.organizationId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!project) return;
 
     const meeting = await prisma.meeting.findUnique({
       where: { id: meetingId },
       include: {
         attendees: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-              },
-            },
-          },
+          include: { user: { select: { id: true, name: true, username: true, email: true } } },
         },
-        meetingPoints: true,
-        nextSteps: true,
       },
     });
+    if (!meeting) return;
 
-    if (!meeting) {
-      return NextResponse.json(
-        { error: "Meeting not found" },
-        { status: 404 }
-      );
-    }
+    const transcriptSegments = meeting.transcriptSegments as TranscriptSegment[] | null;
+    if (!transcriptSegments || transcriptSegments.length === 0) return;
 
-    if (meeting.projectId !== id) {
-      return NextResponse.json(
-        { error: "Meeting does not belong to this project" },
-        { status: 400 }
-      );
-    }
-
-    const transcriptSegments = meeting.transcriptSegments as
-      | TranscriptSegment[]
-      | null;
-
-    if (!transcriptSegments || transcriptSegments.length === 0) {
-      return NextResponse.json(
-        { error: "No transcript available. Transcribe audio first." },
-        { status: 400 }
-      );
-    }
-
-    // Build formatted transcript using speaker map
     const speakerMap = (meeting.speakerMap as Record<string, string>) ?? {};
     const formattedTranscript = transcriptSegments
-      .map((seg) => {
-        const displayName = speakerMap[seg.speaker] ?? seg.speaker;
-        return `${displayName}: ${seg.text}`;
-      })
+      .map((seg) => `${speakerMap[seg.speaker] ?? seg.speaker}: ${seg.text}`)
       .join("\n\n");
 
-    // Build attendee list
     const attendeeList = meeting.attendees
       .map((a) => `- ${a.user.name} (username: ${a.user.username}, id: ${a.user.id})`)
       .join("\n");
@@ -112,9 +64,7 @@ export async function POST(
     const todayStr = today.toISOString().split("T")[0];
     const meetingDateStr = meeting.date.toISOString().split("T")[0];
 
-    // ── Gather platform context ──────────────────────────────
-
-    // All projects in the org with status
+    // Gather platform context
     const allProjects = await prisma.project.findMany({
       where: { organizationId: project.organizationId },
       select: { id: true, name: true, description: true, status: true },
@@ -123,12 +73,10 @@ export async function POST(
       .map((p) => `- ${p.name} (${p.status})${p.description ? `: ${p.description}` : ""}`)
       .join("\n");
 
-    // All org members with their tasks (to infer roles)
     const allUsers = await prisma.user.findMany({
       where: { organizationId: project.organizationId },
       select: {
-        id: true,
-        name: true,
+        id: true, name: true,
         taskAssignments: {
           include: { task: { select: { title: true, status: true, projectId: true } } },
           take: 10,
@@ -146,28 +94,21 @@ export async function POST(
       })
       .join("\n");
 
-    // Previous meeting summaries from this project (for continuity)
     const previousMeetings = await prisma.meeting.findMany({
-      where: {
-        projectId: id,
-        id: { not: meetingId },
-        summary: { not: null },
-      },
+      where: { projectId: id, id: { not: meetingId }, summary: { not: null } },
       select: { name: true, date: true, summary: true },
       orderBy: { date: "desc" },
       take: 3,
     });
     const previousContext = previousMeetings
+      .filter((m) => m.summary && !m.summary.startsWith("__"))
       .map((m) => `### ${m.name} (${m.date.toISOString().split("T")[0]})\n${m.summary}`)
       .join("\n\n");
 
-    // Active tasks in this project (to understand current work)
     const activeTasks = await prisma.task.findMany({
       where: { projectId: id, status: { not: "DONE" } },
       select: {
-        title: true,
-        status: true,
-        endDate: true,
+        title: true, status: true, endDate: true,
         assignees: { include: { user: { select: { name: true } } } },
       },
       orderBy: { endDate: "asc" },
@@ -179,8 +120,6 @@ export async function POST(
         return `- [${t.status}] ${t.title} — ${assignees} (due ${t.endDate.toISOString().split("T")[0]})`;
       })
       .join("\n");
-
-    // ── Build prompt ─────────────────────────────────────────
 
     const promptText = `You are a strategic analyst for a venture builder called "${project.organization?.name || "the organization"}". You are analyzing a meeting transcript with deep organizational context.
 
@@ -243,36 +182,25 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
 
     const responseText = completion.choices[0]?.message?.content;
     if (!responseText) {
-      return NextResponse.json(
-        { error: "Failed to get summary from AI" },
-        { status: 500 }
-      );
+      await prisma.meeting.update({ where: { id: meetingId }, data: { summary: null } });
+      return;
     }
 
     let parsed: SummaryResponse;
     try {
       parsed = JSON.parse(responseText);
     } catch {
-      return NextResponse.json(
-        { error: "Failed to parse AI response" },
-        { status: 500 }
-      );
+      await prisma.meeting.update({ where: { id: meetingId }, data: { summary: null } });
+      return;
     }
 
-    // Build a lookup map from attendee names to user IDs (case-insensitive)
     const attendeeNameMap = new Map<string, string>();
     for (const attendee of meeting.attendees) {
       attendeeNameMap.set(attendee.user.name.toLowerCase(), attendee.user.id);
-      attendeeNameMap.set(
-        attendee.user.username.toLowerCase(),
-        attendee.user.id
-      );
+      attendeeNameMap.set(attendee.user.username.toLowerCase(), attendee.user.id);
     }
 
-    // Update meeting summary, delete old points/steps, create new ones
-    // Transaction returns assigned tasks for notification
     const assignedTasks = await prisma.$transaction(async (tx) => {
-      // Update summary
       await tx.meeting.update({
         where: { id: meetingId },
         data: {
@@ -282,181 +210,150 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
         },
       });
 
-      // Delete existing meeting points and next steps
       await tx.meetingPoint.deleteMany({ where: { meetingId } });
       await tx.nextStep.deleteMany({ where: { meetingId } });
-
-      // Delete tasks that were previously generated from this meeting
       await tx.task.deleteMany({
-        where: {
-          projectId: id,
-          description: `Generated from meeting: ${meeting.name}`,
-        },
+        where: { projectId: id, description: `Generated from meeting: ${meeting.name}` },
       });
 
-      // Create new meeting points
       if (parsed.meetingPoints && parsed.meetingPoints.length > 0) {
         await tx.meetingPoint.createMany({
           data: parsed.meetingPoints.map((point, index) => ({
-            title: point.title,
-            description: point.description,
-            order: index,
-            meetingId,
+            title: point.title, description: point.description, order: index, meetingId,
           })),
         });
       }
 
-      // Create new next steps and corresponding tasks
-      const assignedTasks: { assigneeId: string; description: string; dueDate: string | null }[] = [];
-
+      const assigned: { assigneeId: string; description: string; dueDate: string | null }[] = [];
       if (parsed.nextSteps && parsed.nextSteps.length > 0) {
-
         for (let index = 0; index < parsed.nextSteps.length; index++) {
           const step = parsed.nextSteps[index];
-
-          // Try to match assignee name to a real user
           let assigneeId: string | null = null;
           if (step.assignee) {
-            assigneeId =
-              attendeeNameMap.get(step.assignee.toLowerCase()) ?? null;
+            assigneeId = attendeeNameMap.get(step.assignee.toLowerCase()) ?? null;
           }
-
           await tx.nextStep.create({
-            data: {
-              description: step.description,
-              dueDate: step.dueDate ? new Date(step.dueDate) : null,
-              order: index,
-              assigneeId,
-              meetingId,
-            },
+            data: { description: step.description, dueDate: step.dueDate ? new Date(step.dueDate) : null, order: index, assigneeId, meetingId },
           });
-
-          // Create a corresponding Task in the project
-          let taskEndDate = step.dueDate
-            ? new Date(step.dueDate)
-            : new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-          // Guardrail: if AI returned a past date, default to 7 days from now
-          if (taskEndDate < today) {
-            taskEndDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-          }
-
+          let taskEndDate = step.dueDate ? new Date(step.dueDate) : new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+          if (taskEndDate < today) taskEndDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
           const task = await tx.task.create({
-            data: {
-              title: step.description,
-              description: `Generated from meeting: ${meeting.name}`,
-              status: "TODO",
-              startDate: today,
-              endDate: taskEndDate,
-              projectId: id,
-            },
+            data: { title: step.description, description: `Generated from meeting: ${meeting.name}`, status: "TODO", startDate: today, endDate: taskEndDate, projectId: id },
           });
-
-          // If the next step has an assignee, create a TaskAssignee record
           if (assigneeId) {
-            await tx.taskAssignee.create({
-              data: {
-                userId: assigneeId,
-                taskId: task.id,
-              },
-            });
-            assignedTasks.push({ assigneeId, description: step.description, dueDate: step.dueDate });
+            await tx.taskAssignee.create({ data: { userId: assigneeId, taskId: task.id } });
+            assigned.push({ assigneeId, description: step.description, dueDate: step.dueDate });
           }
         }
       }
-
-      return assignedTasks;
+      return assigned;
     });
 
-    // Notify assigned users (outside transaction)
+    // Notify assigned users
     if (Array.isArray(assignedTasks) && assignedTasks.length > 0) {
       const userIds = [...new Set(assignedTasks.map((t) => t.assigneeId))];
-      const users = await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, email: true, name: true },
-      });
+      const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true, name: true } });
       const userMap = new Map(users.map((u) => [u.id, u]));
-
       for (const task of assignedTasks) {
-        if (task.assigneeId === session.user.id) continue;
+        if (task.assigneeId === sessionUserId) continue;
         const user = userMap.get(task.assigneeId);
         if (user?.email) {
-          notifyTaskAssigned(
-            user.email,
-            user.name || "there",
-            task.description,
-            project.name,
-            id,
-            session.user.name || "Someone",
-            task.dueDate || undefined
-          ).catch(console.error);
+          notifyTaskAssigned(user.email, user.name || "there", task.description, project.name, id, sessionUserName, task.dueDate || undefined).catch(console.error);
         }
       }
     }
 
-    // Fetch the fully updated meeting
+    // Notify attendees
     const updatedMeeting = await prisma.meeting.findUnique({
       where: { id: meetingId },
-      include: {
-        attendees: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-                email: true,
-                avatar: true,
-              },
-            },
-          },
-        },
-        media: {
-          orderBy: { createdAt: "desc" },
-        },
-        meetingPoints: {
-          orderBy: { order: "asc" },
-        },
-        nextSteps: {
-          include: {
-            assignee: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-                avatar: true,
-              },
-            },
-          },
-          orderBy: { order: "asc" },
-        },
-      },
+      include: { attendees: { include: { user: { select: { id: true, name: true, email: true } } } } },
     });
-
-    // Notify attendees that transcript is ready (excluding current user)
     if (updatedMeeting) {
       for (const attendee of updatedMeeting.attendees) {
-        if (
-          attendee.user.id !== session.user.id &&
-          attendee.user.email
-        ) {
-          notifyMeetingTranscriptReady(
-            attendee.user.email,
-            attendee.user.name || "there",
-            updatedMeeting.name,
-            project.name,
-            id,
-            meetingId
-          ).catch(console.error);
+        if (attendee.user.id !== sessionUserId && attendee.user.email) {
+          notifyMeetingTranscriptReady(attendee.user.email, attendee.user.name || "there", updatedMeeting.name, project.name, id, meetingId).catch(console.error);
         }
       }
     }
 
-    return NextResponse.json(updatedMeeting);
+    console.log(`Summarization complete for meeting ${meetingId}`);
   } catch (error) {
-    console.error("Error summarizing meeting:", error);
-    return NextResponse.json(
-      { error: "Failed to summarize meeting" },
-      { status: 500 }
-    );
+    console.error(`Summarization failed for meeting ${meetingId}:`, error);
+    await prisma.meeting.update({ where: { id: meetingId }, data: { summary: null } }).catch(() => {});
+  }
+}
+
+// POST /api/projects/[id]/meetings/[meetingId]/summarize - Start summarization (async)
+export async function POST(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; meetingId: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id, meetingId } = await params;
+
+    const project = await prisma.project.findUnique({ where: { id } });
+    if (!project || project.organizationId !== session.user.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { projectId: true, transcriptSegments: true },
+    });
+    if (!meeting || meeting.projectId !== id) {
+      return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+    }
+
+    if (!meeting.transcriptSegments) {
+      return NextResponse.json({ error: "No transcript available." }, { status: 400 });
+    }
+
+    after(() => runSummarization(id, meetingId, session.user.id, session.user.name || "Someone"));
+
+    return NextResponse.json({ status: "summarizing" });
+  } catch (error) {
+    console.error("Error starting summarization:", error);
+    return NextResponse.json({ error: "Failed to start summarization" }, { status: 500 });
+  }
+}
+
+// GET - Check summarization status
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; meetingId: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { meetingId } = await params;
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { summary: true },
+    });
+
+    if (!meeting) {
+      return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+    }
+
+    if (meeting.summary === "__SUMMARIZING__") {
+      return NextResponse.json({ status: "summarizing" });
+    }
+
+    if (meeting.summary) {
+      return NextResponse.json({ status: "complete" });
+    }
+
+    return NextResponse.json({ status: "none" });
+  } catch (error) {
+    console.error("Error checking summarization:", error);
+    return NextResponse.json({ error: "Failed to check status" }, { status: 500 });
   }
 }
