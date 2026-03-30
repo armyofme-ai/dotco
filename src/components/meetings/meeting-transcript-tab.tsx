@@ -205,9 +205,25 @@ export function MeetingTranscriptTab({
         `/api/projects/${projectId}/meetings/${meetingId}/summarize`,
         { method: "POST" }
       );
-      if (!res.ok) throw new Error("Failed to generate summary");
-      onMeetingChange();
-      onSummarizeComplete?.();
+      if (!res.ok) throw new Error("Failed to start summary");
+
+      // Poll for completion
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const statusRes = await fetch(
+          `/api/projects/${projectId}/meetings/${meetingId}/summarize`
+        );
+        if (!statusRes.ok) continue;
+        const data = await statusRes.json();
+        if (data.status === "complete") {
+          onMeetingChange();
+          onSummarizeComplete?.();
+          return;
+        }
+        if (data.status !== "summarizing") {
+          throw new Error("Summarization failed");
+        }
+      }
     } catch (error) {
       console.error("Error generating summary:", error);
     } finally {
