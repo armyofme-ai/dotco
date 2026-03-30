@@ -67,8 +67,10 @@ export function SpeakerAssignCombobox({
     }
   };
 
+  const [open, setOpen] = useState(true);
+
   return (
-    <Popover defaultOpen onOpenChange={(open) => { if (!open) onCancel(); }}>
+    <Popover open={open} onOpenChange={(o) => { if (!o) { setOpen(false); onCancel(); } }}>
       <PopoverTrigger
         className={`inline-flex w-fit cursor-pointer items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${speakerColor.bg} ${speakerColor.text}`}
       >
@@ -98,7 +100,11 @@ export function SpeakerAssignCombobox({
                     onSelect={() =>
                       handleSelectMember(attendee.user.id, attendee.user.name)
                     }
-                    className="gap-2 text-xs"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectMember(attendee.user.id, attendee.user.name);
+                    }}
+                    className="gap-2 text-xs cursor-pointer"
                   >
                     <Avatar size="sm">
                       {attendee.user.avatar && (
@@ -121,7 +127,11 @@ export function SpeakerAssignCombobox({
                     onSelect={() =>
                       handleSelectMember(member.user.id, member.user.name)
                     }
-                    className="gap-2 text-xs"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectMember(member.user.id, member.user.name);
+                    }}
+                    className="gap-2 text-xs cursor-pointer"
                   >
                     <Avatar size="sm">
                       {member.user.avatar && (
@@ -140,7 +150,11 @@ export function SpeakerAssignCombobox({
                 <CommandItem
                   value={`assign-custom-${trimmed}`}
                   onSelect={handleSelectFreeText}
-                  className="gap-2 text-xs"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelectFreeText();
+                  }}
+                  className="gap-2 text-xs cursor-pointer"
                 >
                   <UserPlus className="size-3.5 text-muted-foreground" />
                   <span className="truncate">
