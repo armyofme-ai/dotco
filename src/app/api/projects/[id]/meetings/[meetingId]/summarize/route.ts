@@ -13,6 +13,7 @@ interface TranscriptSegment {
 
 interface SummaryResponse {
   summary: string;
+  strategicAnalysis: string;
   meetingPoints: { title: string; description: string }[];
   nextSteps: {
     description: string;
@@ -34,7 +35,10 @@ export async function POST(
 
     const { id, meetingId } = await params;
 
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findUnique({
+      where: { id },
+      include: { organization: { select: { name: true } } },
+    });
     if (!project) {
       return NextResponse.json(
         { error: "Project not found" },
@@ -108,34 +112,121 @@ export async function POST(
     const todayStr = today.toISOString().split("T")[0];
     const meetingDateStr = meeting.date.toISOString().split("T")[0];
 
-    const promptText = `You are analyzing a meeting transcript. The meeting is titled "${meeting.name}".
+    // ── Gather platform context ──────────────────────────────
+
+    // All projects in the org with status
+    const allProjects = await prisma.project.findMany({
+      where: { organizationId: project.organizationId },
+      select: { id: true, name: true, description: true, status: true },
+    });
+    const projectContext = allProjects
+      .map((p) => `- ${p.name} (${p.status})${p.description ? `: ${p.description}` : ""}`)
+      .join("\n");
+
+    // All org members with their tasks (to infer roles)
+    const allUsers = await prisma.user.findMany({
+      where: { organizationId: project.organizationId },
+      select: {
+        id: true,
+        name: true,
+        taskAssignments: {
+          include: { task: { select: { title: true, status: true, projectId: true } } },
+          take: 10,
+          orderBy: { task: { createdAt: "desc" } },
+        },
+      },
+    });
+    const teamContext = allUsers
+      .map((u) => {
+        const tasks = u.taskAssignments.map((ta) => {
+          const proj = allProjects.find((p) => p.id === ta.task.projectId);
+          return `    - [${ta.task.status}] ${ta.task.title}${proj ? ` (${proj.name})` : ""}`;
+        });
+        return `- ${u.name}:\n${tasks.length > 0 ? tasks.join("\n") : "    - No recent tasks"}`;
+      })
+      .join("\n");
+
+    // Previous meeting summaries from this project (for continuity)
+    const previousMeetings = await prisma.meeting.findMany({
+      where: {
+        projectId: id,
+        id: { not: meetingId },
+        summary: { not: null },
+      },
+      select: { name: true, date: true, summary: true },
+      orderBy: { date: "desc" },
+      take: 3,
+    });
+    const previousContext = previousMeetings
+      .map((m) => `### ${m.name} (${m.date.toISOString().split("T")[0]})\n${m.summary}`)
+      .join("\n\n");
+
+    // Active tasks in this project (to understand current work)
+    const activeTasks = await prisma.task.findMany({
+      where: { projectId: id, status: { not: "DONE" } },
+      select: {
+        title: true,
+        status: true,
+        endDate: true,
+        assignees: { include: { user: { select: { name: true } } } },
+      },
+      orderBy: { endDate: "asc" },
+      take: 15,
+    });
+    const activeTasksContext = activeTasks
+      .map((t) => {
+        const assignees = t.assignees.map((a) => a.user.name).join(", ") || "Unassigned";
+        return `- [${t.status}] ${t.title} — ${assignees} (due ${t.endDate.toISOString().split("T")[0]})`;
+      })
+      .join("\n");
+
+    // ── Build prompt ─────────────────────────────────────────
+
+    const promptText = `You are a strategic analyst for a venture builder called "${project.organization?.name || "the organization"}". You are analyzing a meeting transcript with deep organizational context.
 
 Today's date is ${todayStr}.
-This meeting took place on ${meetingDateStr}.
+This meeting "${meeting.name}" took place on ${meetingDateStr} for the project "${project.name}"${project.description ? ` (${project.description})` : ""}.
 
-Meeting attendees:
+## Meeting Attendees
 ${attendeeList || "No attendees listed."}
 
-Transcript:
+## Organization Context
+
+### All Projects
+${projectContext}
+
+### Team Members & Their Recent Work
+${teamContext}
+
+### Active Tasks in "${project.name}"
+${activeTasksContext || "No active tasks."}
+
+${previousContext ? `### Previous Meeting Summaries (for continuity)\n${previousContext}` : ""}
+
+## Transcript
 ${formattedTranscript}
 
-Analyze this meeting transcript and return a JSON object with the following structure:
+---
+
+Analyze this meeting deeply and return a JSON object with the following structure:
 {
-  "summary": "A 2-3 paragraph summary of the meeting, covering the main topics discussed, key decisions made, and overall outcomes.",
+  "summary": "A comprehensive summary (3-5 paragraphs) covering: what was discussed, what decisions were made vs what was only discussed, what changed in the status of projects/initiatives, and what remains unresolved. Be specific — use names, numbers, and concrete details from the transcript.",
+  "strategicAnalysis": "1-2 paragraphs analyzing the strategic implications of this meeting. What does it mean for the organization? What patterns do you see? What risks or opportunities emerged? Connect this meeting to the broader organizational context.",
   "meetingPoints": [
-    {"title": "Brief title of discussion point", "description": "Detailed description of what was discussed"}
+    {"title": "Topic title", "description": "Detailed description including: what was said, by whom, what was decided (if anything), and what remains open. Include direct references to who said what."}
   ],
   "nextSteps": [
-    {"description": "Description of the action item", "assignee": "Name of the person responsible or null if unassigned", "dueDate": "YYYY-MM-DD format or null if no date mentioned"}
+    {"description": "Specific, actionable task description", "assignee": "Exact name of person who volunteered or was assigned (listen carefully for who says 'I'll do it' or 'yo me apunto'), or null if unclear", "dueDate": "YYYY-MM-DD or null"}
   ]
 }
 
-Important guidelines:
-- For the summary, write clear and professional prose covering the key themes and outcomes.
-- For meetingPoints, extract all significant discussion topics. Each should have a concise title and a fuller description.
-- For nextSteps, identify all action items, tasks, and commitments made during the meeting. Match assignees to the actual meeting attendees listed above when possible. Use the attendee's exact name as it appears in the attendee list.
-- If a next step doesn't have a clear assignee, set assignee to null.
-- If a next step doesn't have a clear due date, set dueDate to null. When suggesting due dates, use dates relative to today (${todayStr}). All dates MUST be in the future (${todayStr} or later).
+CRITICAL GUIDELINES:
+- SUMMARY: Be thorough and specific. Mention who said what. Distinguish between decisions made and topics merely discussed. Note any disagreements or concerns raised.
+- STRATEGIC ANALYSIS: Connect this meeting to the organization's projects and goals. Identify patterns, risks, validated or invalidated assumptions, and strategic shifts.
+- MEETING POINTS: Each topic discussed should be its own point. Include the nuance — who advocated for what, what concerns were raised, what was the outcome.
+- NEXT STEPS: Be extremely rigorous. Only include items where someone explicitly committed to doing something or was clearly assigned. Listen for phrases like "I'll do it", "yo me apunto", "I'll draft", "let's schedule", etc. The assignee MUST be the person who volunteered or was assigned, not someone who merely discussed the topic. If the transcript is in Spanish or another language, still use the attendee names exactly as listed above.
+- All dates MUST be in the future (${todayStr} or later). If a specific date is mentioned (e.g., "Wednesday meeting"), calculate the actual date.
+- If a project status change was discussed (e.g., killing a project, putting on hold), include it as a next step: "Move [project] status to [new status]".
 
 Return ONLY the JSON object, with no additional text or markdown formatting.`;
 
@@ -184,7 +275,11 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
       // Update summary
       await tx.meeting.update({
         where: { id: meetingId },
-        data: { summary: parsed.summary },
+        data: {
+          summary: parsed.strategicAnalysis
+            ? `${parsed.summary}\n\n---\n\n**Strategic Analysis**\n\n${parsed.strategicAnalysis}`
+            : parsed.summary,
+        },
       });
 
       // Delete existing meeting points and next steps
