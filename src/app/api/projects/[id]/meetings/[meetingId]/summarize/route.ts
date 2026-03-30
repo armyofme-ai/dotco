@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notifyMeetingTranscriptReady, notifyTaskAssigned } from "@/lib/email";
 import OpenAI from "openai";
+import { resolveSpeakerName, parseSpeakerMap } from "@/lib/speaker-utils";
 
 export const maxDuration = 300;
 
@@ -51,9 +52,9 @@ async function runSummarization(id: string, meetingId: string, sessionUserId: st
     const transcriptSegments = meeting.transcriptSegments as TranscriptSegment[] | null;
     if (!transcriptSegments || transcriptSegments.length === 0) return;
 
-    const speakerMap = (meeting.speakerMap as Record<string, string>) ?? {};
+    const speakerMap = parseSpeakerMap(meeting.speakerMap);
     const formattedTranscript = transcriptSegments
-      .map((seg) => `${speakerMap[seg.speaker] ?? seg.speaker}: ${seg.text}`)
+      .map((seg) => `${resolveSpeakerName(speakerMap[seg.speaker] ?? seg.speaker)}: ${seg.text}`)
       .join("\n\n");
 
     const attendeeList = meeting.attendees

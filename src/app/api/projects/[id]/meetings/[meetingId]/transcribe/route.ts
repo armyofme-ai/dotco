@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { DeepgramClient } from "@deepgram/sdk";
+import type { SpeakerEntry } from "@/lib/speaker-utils";
 
 interface TranscriptSegment {
   speaker: string;
@@ -19,7 +20,7 @@ function generateRunId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function runTranscription(meetingId: string, mediaId: string, audioUrl: string, runId: string) {
+async function runTranscription(projectId: string, meetingId: string, mediaId: string, audioUrl: string, runId: string) {
   try {
     // Mark meeting as transcribing with this run's ID
     await prisma.meeting.update({
@@ -121,10 +122,22 @@ async function runTranscription(meetingId: string, mediaId: string, audioUrl: st
       .join("\n\n");
 
     const uniqueSpeakers = [...new Set(transcriptSegments.map((seg) => seg.speaker))];
-    const speakerMap: Record<string, string> = {};
+    const speakerMap: Record<string, string | SpeakerEntry> = {};
     uniqueSpeakers.forEach((speaker, index) => {
       speakerMap[speaker] = `Speaker ${index + 1}`;
     });
+
+    // Apply project speaker defaults
+    const speakerDefaults = await prisma.projectSpeakerDefault.findMany({
+      where: { projectId },
+    });
+    for (const def of speakerDefaults) {
+      if (speakerMap[def.speakerLabel] !== undefined) {
+        speakerMap[def.speakerLabel] = def.userId
+          ? { name: def.name, userId: def.userId, status: "suggested" as const }
+          : def.name;
+      }
+    }
 
     await prisma.meeting.update({
       where: { id: meetingId },
@@ -194,7 +207,7 @@ export async function POST(
     }
 
     const runId = generateRunId();
-    after(() => runTranscription(meetingId, mediaId, media.url, runId));
+    after(() => runTranscription(id, meetingId, mediaId, media.url, runId));
 
     return NextResponse.json({ status: "transcribing", runId });
   } catch (error) {
