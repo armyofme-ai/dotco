@@ -7,7 +7,7 @@
 **Added:** 2026-03-28
 
 ### Problem
-Gmail shows "Respuesta no válida" (Invalid response) on meeting invite emails because the sender (`notifications@armyofme.ai`) doesn't match the ORGANIZER field in the .ics file (the actual meeting creator's email). Gmail can't route RSVP replies (Accept/Decline/Maybe) back to the organizer through our notification address.
+Gmail shows "Respuesta no válida" (Invalid response) on meeting invite emails because the sender (`notifications@yourdomain.com`) doesn't match the ORGANIZER field in the .ics file (the actual meeting creator's email). Gmail can't route RSVP replies (Accept/Decline/Maybe) back to the organizer through our notification address.
 
 ### Current behavior
 - Calendar events are created correctly with proper times, attendees, and organizer
@@ -15,8 +15,8 @@ Gmail shows "Respuesta no válida" (Invalid response) on meeting invite emails b
 - Attendees can't RSVP through their email client
 
 ### Ideal solution
-Set up **Resend Inbound** to receive emails at `notifications@armyofme.ai`:
-1. Configure Resend inbound webhook for `notifications@armyofme.ai`
+Set up **Resend Inbound** to receive emails at `notifications@yourdomain.com`:
+1. Configure Resend inbound webhook for `notifications@yourdomain.com`
 2. Create a webhook endpoint in Dotco (`/api/webhooks/rsvp`) to process incoming RSVP emails
 3. Parse the iCalendar RSVP response to extract acceptance status
 4. Update the meeting attendance status in the database

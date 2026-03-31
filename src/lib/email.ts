@@ -26,11 +26,13 @@ async function sendEmail(
   to: string,
   subject: string,
   html: string,
-  attachments?: EmailAttachment[]
+  attachments?: EmailAttachment[],
+  apiKey?: string
 ) {
-  if (!process.env.RESEND_API_KEY) return;
+  const key = apiKey || process.env.RESEND_API_KEY;
+  if (!key) return;
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = new Resend(key);
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL || "Dotco <onboarding@resend.dev>",
     to,

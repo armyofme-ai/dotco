@@ -23,6 +23,13 @@ model Organization {
   // Custom labels for kanban columns: {"BACKLOG": "To Do", "IN_PROGRESS": "Working"}
   kanbanLabels  Json?
 
+  // AI provider configuration
+  llmProvider    String?  @default("openai")
+  llmApiKey      String?  // encrypted API key
+  llmModel       String?  @default("gpt-4o")
+  deepgramApiKey String?  // encrypted
+  resendApiKey   String?  // encrypted
+
   users    User[]
   projects Project[]
   apiKeys  ApiKey[]

@@ -70,7 +70,7 @@ export function ApiKeysSettings() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const appUrl = typeof window !== "undefined" ? window.location.origin : "https://dotco.armyofme.ai";
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3001";
   const mcpUrl = `${appUrl}/api/mcp`;
 
   const claudeCodeConfig = JSON.stringify({
