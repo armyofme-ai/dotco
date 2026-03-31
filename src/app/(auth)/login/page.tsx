@@ -1,15 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [setupSuccess, setSetupSuccess] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/setup")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.needsSetup) router.replace("/setup");
+      })
+      .catch(() => {});
+  }, [router]);
+
+  useEffect(() => {
+    if (searchParams.get("setup") === "success") {
+      setSetupSuccess(true);
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -59,6 +84,12 @@ export default function LoginPage() {
 
       <div className="rounded-xl border border-border/60 bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
         <form onSubmit={handleSubmit} method="post" action="#" className="flex flex-col gap-4">
+          {setupSuccess && (
+            <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              Workspace created successfully. Sign in with your new account.
+            </div>
+          )}
+
           {error && (
             <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
               {error}

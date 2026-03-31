@@ -45,7 +45,6 @@ Open-source meeting intelligence platform for teams. Record meetings, transcribe
 4. Initialize database:
    ```bash
    npx prisma migrate deploy
-   npx prisma db seed
    ```
 
 5. Start dev server:
@@ -53,7 +52,9 @@ Open-source meeting intelligence platform for teams. Record meetings, transcribe
    npm run dev
    ```
 
-6. Open http://localhost:3001 and login with the seed admin account.
+6. Open http://localhost:3001 -- complete the setup wizard to create your admin account.
+
+> Alternatively, for automated/headless setups, you can use `npx prisma db seed` with `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ORG_NAME` environment variables.
 
 > API keys can also be configured in Settings > AI Providers after first login.
 

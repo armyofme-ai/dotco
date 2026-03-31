@@ -9,6 +9,13 @@ async function main() {
   });
   const prisma = new PrismaClient({ adapter });
 
+  const existingUsers = await prisma.user.count();
+  if (existingUsers > 0) {
+    console.log("Users already exist. Skipping seed.");
+    await prisma.$disconnect();
+    return;
+  }
+
   const orgName = process.env.ORG_NAME || "My Organization";
   const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
   const adminPassword = process.env.ADMIN_PASSWORD || "Password123!";
