@@ -35,9 +35,15 @@ yarn-error.log*
 .env.local
 .env.production
 .env.development
+.env.production.local
+.env.local.backup
+.env*.local
 
 # vercel
 .vercel
+
+# memory
+.memory/
 
 # typescript
 *.tsbuildinfo
@@ -47,6 +53,6 @@ next-env.d.ts
 
 # uploads
 /uploads
-.env*.local
+
+# test scripts
 scripts/test-*.ts
-.env.local.backup

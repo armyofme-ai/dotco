@@ -1,7 +1,14 @@
 {
-  "name": "dotco-init",
+  "name": "dotco",
+  "description": "Open-source meeting intelligence platform for teams",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dotco-ai/dotco"
+  },
+  "keywords": ["meetings", "transcription", "ai", "mcp", "summarization", "project-management"],
   "scripts": {
     "dev": "next dev",
     "postinstall": "prisma generate",

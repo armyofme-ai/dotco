@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyMeetingTranscriptReady, notifyTaskAssigned } from "@/lib/email";
 import OpenAI from "openai";
 import { resolveSpeakerName, parseSpeakerMap } from "@/lib/speaker-utils";
+import { getAIConfig } from "@/lib/ai-config";
 
 export const maxDuration = 300;
 
@@ -170,9 +171,14 @@ CRITICAL GUIDELINES:
 
 Return ONLY the JSON object, with no additional text or markdown formatting.`;
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+    const aiConfig = await getAIConfig(project.organizationId);
+    if (!aiConfig.apiKey) {
+      await prisma.meeting.update({ where: { id: meetingId }, data: { summary: null } });
+      return;
+    }
+    const openai = new OpenAI({ apiKey: aiConfig.apiKey });
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: aiConfig.model,
       max_tokens: 4096,
       response_format: { type: "json_object" },
       messages: [

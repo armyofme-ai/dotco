@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { DeepgramClient } from "@deepgram/sdk";
 import type { SpeakerEntry } from "@/lib/speaker-utils";
+import { getDeepgramKey } from "@/lib/ai-config";
 
 interface TranscriptSegment {
   speaker: string;
@@ -20,7 +21,7 @@ function generateRunId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function runTranscription(projectId: string, meetingId: string, mediaId: string, audioUrl: string, runId: string) {
+async function runTranscription(projectId: string, meetingId: string, mediaId: string, audioUrl: string, runId: string, organizationId: string) {
   try {
     // Mark meeting as transcribing with this run's ID
     await prisma.meeting.update({
@@ -35,7 +36,24 @@ async function runTranscription(projectId: string, meetingId: string, mediaId: s
     const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
     console.log(`[${runId}] Downloaded ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB, sending to Deepgram...`);
 
-    const deepgram = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY! });
+    const deepgramKey = await getDeepgramKey(organizationId);
+    if (!deepgramKey) {
+      console.error(`[${runId}] No Deepgram API key configured`);
+      const current = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { transcription: true } });
+      if (current?.transcription?.includes(runId)) {
+        await prisma.meeting.update({
+          where: { id: meetingId },
+          data: {
+            transcription: "__FAILED__No Deepgram API key configured. Please set one in Settings > AI Providers.",
+            transcriptSegments: Prisma.DbNull,
+            speakerMap: Prisma.DbNull,
+            transcribedMediaId: null,
+          },
+        });
+      }
+      return;
+    }
+    const deepgram = new DeepgramClient({ apiKey: deepgramKey });
     const result = await deepgram.listen.v1.media.transcribeFile(
       audioBuffer,
       {
@@ -207,7 +225,7 @@ export async function POST(
     }
 
     const runId = generateRunId();
-    after(() => runTranscription(id, meetingId, mediaId, media.url, runId));
+    after(() => runTranscription(id, meetingId, mediaId, media.url, runId, project.organizationId));
 
     return NextResponse.json({ status: "transcribing", runId });
   } catch (error) {

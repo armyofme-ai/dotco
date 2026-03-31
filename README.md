@@ -1,36 +1,133 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dotco
 
-## Getting Started
+Open-source meeting intelligence platform for teams. Record meetings, transcribe with speaker diarization, generate AI-powered summaries and action items, and connect your team's knowledge to AI assistants via MCP.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Meeting recording & transcription (Deepgram Nova-3, auto language detection)
+- AI-powered meeting summaries with strategic analysis (GPT-4o)
+- Automatic action item extraction with assignee detection
+- Calendar integration (.ics invites for Google Calendar, Outlook, Apple Calendar)
+- Project & task management
+- Email notifications for meetings, tasks, and transcripts
+- MCP server for Claude integration (10 read-only tools)
+- Speaker diarization with member assignment and voice memory
+- Multi-language support (auto-detected)
+
+## Quick Start
+
+### Prerequisites
+- Node.js 20+
+- PostgreSQL 16+ (or use Docker)
+- API keys for: [OpenAI](https://platform.openai.com/api-keys), [Deepgram](https://console.deepgram.com)
+- Optional: [Resend](https://resend.com/api-keys) for email notifications
+
+### Setup
+
+1. Clone and install:
+   ```bash
+   git clone https://github.com/dotco-ai/dotco.git
+   cd dotco
+   npm install
+   ```
+
+2. Start PostgreSQL:
+   ```bash
+   docker compose up -d
+   ```
+
+3. Configure environment:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your API keys
+   ```
+
+4. Initialize database:
+   ```bash
+   npx prisma migrate deploy
+   npx prisma db seed
+   ```
+
+5. Start dev server:
+   ```bash
+   npm run dev
+   ```
+
+6. Open http://localhost:3001 and login with the seed admin account.
+
+> API keys can also be configured in Settings > AI Providers after first login.
+
+## MCP Integration
+
+Dotco includes a built-in MCP server that lets AI assistants (like Claude) access your team's knowledge.
+
+### Claude Code
+Add to your `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "dotco": {
+      "type": "url",
+      "url": "https://your-dotco-instance.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Claude Desktop
+Add to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "dotco": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://your-dotco-instance.com/api/mcp",
+        "--header",
+        "Authorization: Bearer YOUR_API_KEY"
+      ]
+    }
+  }
+}
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Generate API keys in Settings > API Keys.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tech Stack
 
-## Learn More
+- **Framework**: Next.js 15 (App Router)
+- **Database**: PostgreSQL with Prisma ORM
+- **Auth**: NextAuth.js (credentials)
+- **UI**: shadcn/ui, Tailwind CSS
+- **Transcription**: Deepgram Nova-3
+- **AI**: OpenAI GPT-4o (configurable)
+- **Email**: Resend
+- **Storage**: Vercel Blob / local filesystem
+- **Deployment**: Vercel (recommended) or any Node.js host
 
-To learn more about Next.js, take a look at the following resources:
+## Environment Variables
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `AUTH_SECRET` | Yes | NextAuth secret (`openssl rand -base64 32`) |
+| `AUTH_URL` | Yes | App URL (e.g. `http://localhost:3001`) |
+| `NEXT_PUBLIC_APP_URL` | Yes | Public app URL |
+| `OPENAI_API_KEY` | No* | OpenAI API key for summaries |
+| `DEEPGRAM_API_KEY` | No* | Deepgram API key for transcription |
+| `RESEND_API_KEY` | No | Resend API key for emails |
+| `BLOBPRO_READ_WRITE_TOKEN` | No | Vercel Blob token (production only) |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+*Can be configured via Settings > AI Providers instead of env vars.
 
-## Deploy on Vercel
+## Contributing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+[MIT](LICENSE)

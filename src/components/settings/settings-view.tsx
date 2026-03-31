@@ -6,7 +6,8 @@ import { UsersSettings } from "@/components/settings/users-settings";
 import { InvitationsSettings } from "@/components/settings/invitations-settings";
 import { KanbanSettings } from "@/components/settings/kanban-settings";
 import { ApiKeysSettings } from "@/components/settings/api-keys-settings";
-import { Building2, Users, Mail, Columns3, Key } from "lucide-react";
+import { AISettings } from "@/components/settings/ai-settings";
+import { Building2, Users, Mail, Columns3, Key, Cpu } from "lucide-react";
 
 interface SettingsViewProps {
   role: string;
@@ -28,6 +29,12 @@ export function SettingsView({ role }: SettingsViewProps) {
           <TabsTrigger value="kanban">
             <Columns3 />
             Kanban
+          </TabsTrigger>
+        )}
+        {isOwner && (
+          <TabsTrigger value="ai-providers">
+            <Cpu />
+            AI Providers
           </TabsTrigger>
         )}
         <TabsTrigger value="api-keys">
@@ -57,6 +64,12 @@ export function SettingsView({ role }: SettingsViewProps) {
       {isOwner && (
         <TabsContent value="kanban">
           <KanbanSettings />
+        </TabsContent>
+      )}
+
+      {isOwner && (
+        <TabsContent value="ai-providers">
+          <AISettings />
         </TabsContent>
       )}
 
