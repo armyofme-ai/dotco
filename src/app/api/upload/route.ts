@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
+import { uploadFile } from "@/lib/storage";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-// POST /api/upload - Upload a file (photos and audio)
+// POST /api/upload - Upload a file (photos and audio) via storage abstraction
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -40,21 +38,18 @@ export async function POST(request: NextRequest) {
     }
 
     const type = mimeType.startsWith("image/") ? "photos" : "audio";
-    const uploadDir = path.join(process.cwd(), "uploads", type);
-    await mkdir(uploadDir, { recursive: true });
-
-    const uniqueFilename = `${uuidv4()}-${file.name}`;
-    const filePath = path.join(uploadDir, uniqueFilename);
+    const pathname = `${type}/${Date.now()}-${file.name}`;
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
 
-    const url = `/uploads/${type}/${uniqueFilename}`;
+    const result = await uploadFile(pathname, buffer, {
+      contentType: mimeType,
+    });
 
     return NextResponse.json(
       {
-        url,
+        url: result.url,
         filename: file.name,
         size: file.size,
         mimeType,

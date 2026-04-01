@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { del } from "@vercel/blob";
+import { deleteFile } from "@/lib/storage";
 
 // DELETE /api/projects/[id]/meetings/[meetingId]/media/[mediaId] - Delete media
 export async function DELETE(
@@ -54,14 +54,8 @@ export async function DELETE(
       );
     }
 
-    // Delete from Vercel Blob (or ignore if local/old URL)
-    try {
-      if (media.url.includes("blob.vercel-storage.com")) {
-        await del(media.url, { token: process.env.BLOBPRO_READ_WRITE_TOKEN });
-      }
-    } catch {
-      console.warn("Could not delete blob:", media.url);
-    }
+    // Delete the file from whichever storage provider holds it
+    await deleteFile(media.url);
 
     await prisma.media.delete({ where: { id: mediaId } });
 

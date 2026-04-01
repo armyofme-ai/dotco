@@ -56,6 +56,8 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type StorageProvider = "vercel-blob" | "s3" | "local";
+
 export function MeetingMediaTab({
   projectId,
   meetingId,
@@ -71,6 +73,7 @@ export function MeetingMediaTab({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [transcribingId, setTranscribingId] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [storageProvider, setStorageProvider] = useState<StorageProvider | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const photos = media.filter((m) => m.type === "photo");
@@ -78,6 +81,25 @@ export function MeetingMediaTab({
 
   const hasTranscript =
     transcriptSegments !== null && transcriptSegments.length > 0;
+
+  // Fetch storage provider on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchProvider() {
+      try {
+        const res = await fetch("/api/storage");
+        if (res.ok) {
+          const { provider } = await res.json();
+          if (!cancelled) setStorageProvider(provider as StorageProvider);
+        }
+      } catch {
+        // Fallback: assume local if fetch fails
+        if (!cancelled) setStorageProvider("local");
+      }
+    }
+    fetchProvider();
+    return () => { cancelled = true; };
+  }, []);
 
   // Check if a transcription is in progress on mount
   useEffect(() => {
@@ -140,29 +162,45 @@ export function MeetingMediaTab({
           const type = file.type.startsWith("image/") ? "photo" : "audio";
           const pathname = `${type}/${Date.now()}-${file.name}`;
 
-          // 1. Get client token from our API
-          const tokenRes = await fetch("/api/upload-token", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pathname }),
-          });
-          if (!tokenRes.ok) throw new Error("Failed to get upload token");
-          const { clientToken } = await tokenRes.json();
+          let fileUrl: string;
 
-          // 2. Upload directly to Vercel Blob
-          const blob = await put(pathname, file, {
-            access: "public",
-            token: clientToken,
-          });
+          if (storageProvider === "vercel-blob") {
+            // Vercel Blob: get client token then upload directly
+            const tokenRes = await fetch("/api/upload-token", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pathname }),
+            });
+            if (!tokenRes.ok) throw new Error("Failed to get upload token");
+            const { clientToken } = await tokenRes.json();
 
-          // 3. Register the blob URL as a media record
+            const blob = await put(pathname, file, {
+              access: "public",
+              token: clientToken,
+            });
+            fileUrl = blob.url;
+          } else {
+            // S3 or local: POST to /api/upload with FormData
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const uploadRes = await fetch("/api/upload", {
+              method: "POST",
+              body: formData,
+            });
+            if (!uploadRes.ok) throw new Error("Failed to upload file");
+            const uploadData = await uploadRes.json();
+            fileUrl = uploadData.url;
+          }
+
+          // Register the URL as a media record
           const mediaRes = await fetch(
             `/api/projects/${projectId}/meetings/${meetingId}/media`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                url: blob.url,
+                url: fileUrl,
                 filename: file.name,
                 mimeType: file.type,
               }),
@@ -180,7 +218,7 @@ export function MeetingMediaTab({
         setUploadProgress(0);
       }
     },
-    [projectId, meetingId, onMediaChange]
+    [projectId, meetingId, onMediaChange, storageProvider]
   );
 
   const handleDelete = async (mediaId: string) => {

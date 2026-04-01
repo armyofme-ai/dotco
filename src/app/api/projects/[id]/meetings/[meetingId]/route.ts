@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { del } from "@vercel/blob";
+import { deleteFiles } from "@/lib/storage";
 import { notifyMeetingInvite, notifyMeetingUpdated, notifyMeetingCancelled } from "@/lib/email";
 
 // GET /api/projects/[id]/meetings/[meetingId] - Get full meeting with all relations
@@ -353,22 +353,14 @@ export async function DELETE(
       );
     }
 
-    // Delete media blobs before deleting the meeting
+    // Delete media files before deleting the meeting
     const mediaFiles = await prisma.media.findMany({
       where: { meetingId },
       select: { url: true },
     });
 
-    const blobUrls = mediaFiles
-      .map((m) => m.url)
-      .filter((url) => url.includes("blob.vercel-storage.com"));
-
-    if (blobUrls.length > 0) {
-      try {
-        await del(blobUrls, { token: process.env.BLOBPRO_READ_WRITE_TOKEN });
-      } catch {
-        console.warn("Failed to delete some blobs");
-      }
+    if (mediaFiles.length > 0) {
+      await deleteFiles(mediaFiles.map((m) => m.url));
     }
 
     // Delete generated tasks from this meeting

@@ -12,9 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
-export function SetupForm() {
+interface SetupFormProps {
+  storageConfigured?: boolean;
+}
+
+export function SetupForm({ storageConfigured = true }: SetupFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -103,6 +107,15 @@ export function SetupForm() {
           {error && (
             <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
+            </div>
+          )}
+
+          {!storageConfigured && (
+            <div className="flex items-start gap-2 rounded-lg bg-yellow-500/10 px-3 py-2 text-sm text-yellow-700 dark:text-yellow-400">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                No storage backend is configured. Set <code className="font-mono text-xs">BLOBPRO_READ_WRITE_TOKEN</code>, <code className="font-mono text-xs">S3_BUCKET</code>, or <code className="font-mono text-xs">UPLOAD_DIR</code> in your environment to enable file uploads.
+              </span>
             </div>
           )}
 
