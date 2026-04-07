@@ -98,6 +98,21 @@ Add to your `claude_desktop_config.json`:
 
 Generate API keys in Settings > API Keys.
 
+## Deployment
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Farmyofme-ai%2Fdotco&env=DATABASE_URL,AUTH_SECRET,AUTH_URL,NEXT_PUBLIC_APP_URL&envDescription=See%20DEPLOYMENT.md%20for%20details&project-name=dotco)
+
+Dotco runs anywhere that supports Node.js 20+ and PostgreSQL. See **[DEPLOYMENT.md](DEPLOYMENT.md)** for full instructions covering:
+
+- **Vercel** (one-click or CLI)
+- **Railway**
+- **Render**
+- **Fly.io**
+- **Docker Compose** (any VPS — DigitalOcean, Hetzner, Linode, AWS EC2)
+- **Coolify** (self-hosted PaaS)
+- **AWS** (App Runner / ECS)
+- **DigitalOcean App Platform**
+
 ## Tech Stack
 
 - **Framework**: Next.js 15 (App Router)
