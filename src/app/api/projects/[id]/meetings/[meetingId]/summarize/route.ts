@@ -220,7 +220,7 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
       await tx.meetingPoint.deleteMany({ where: { meetingId } });
       await tx.nextStep.deleteMany({ where: { meetingId } });
       await tx.task.deleteMany({
-        where: { projectId: id, description: `Generated from meeting: ${meeting.name}` },
+        where: { projectId: id, description: `Generated from meeting [${meetingId}]: ${meeting.name}` },
       });
 
       if (parsed.meetingPoints && parsed.meetingPoints.length > 0) {
@@ -245,7 +245,7 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
           let taskEndDate = step.dueDate ? new Date(step.dueDate) : new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
           if (taskEndDate < today) taskEndDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
           const task = await tx.task.create({
-            data: { title: step.description, description: `Generated from meeting: ${meeting.name}`, status: "TODO", startDate: today, endDate: taskEndDate, projectId: id },
+            data: { title: step.description, description: `Generated from meeting [${meetingId}]: ${meeting.name}`, status: "TODO", startDate: today, endDate: taskEndDate, projectId: id },
           });
           if (assigneeId) {
             await tx.taskAssignee.create({ data: { userId: assigneeId, taskId: task.id } });
