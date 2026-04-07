@@ -40,6 +40,7 @@ const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
     { label: "GPT-4.1", value: "gpt-4.1" },
     { label: "GPT-4.1 Mini", value: "gpt-4.1-mini" },
     { label: "GPT-4.1 Nano", value: "gpt-4.1-nano" },
+    { label: "o3", value: "o3" },
     { label: "o3 Mini", value: "o3-mini" },
   ],
   anthropic: [
