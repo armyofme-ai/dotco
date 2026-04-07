@@ -28,6 +28,7 @@ model Organization {
   llmApiKey      String?  // encrypted API key
   llmModel       String?  @default("gpt-4o")
   deepgramApiKey String?  // encrypted
+  deepgramModel  String?  @default("nova-3")
   resendApiKey   String?  // encrypted
 
   users    User[]

@@ -18,6 +18,7 @@ export async function GET() {
         llmModel: true,
         llmApiKey: true,
         deepgramApiKey: true,
+        deepgramModel: true,
         resendApiKey: true,
       },
     });
@@ -34,6 +35,7 @@ export async function GET() {
       llmModel: org.llmModel || "gpt-4o",
       llmApiKeySet: !!org.llmApiKey,
       deepgramApiKeySet: !!org.deepgramApiKey,
+      deepgramModel: org.deepgramModel || "nova-3",
       resendApiKeySet: !!org.resendApiKey,
       // Also indicate if env vars are available as fallback
       llmEnvKeySet: !!process.env.OPENAI_API_KEY,
@@ -65,13 +67,14 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { llmProvider, llmModel, llmApiKey, deepgramApiKey, resendApiKey } =
+    const { llmProvider, llmModel, llmApiKey, deepgramApiKey, deepgramModel, resendApiKey } =
       body;
 
     const data: Record<string, unknown> = {};
 
     if (llmProvider !== undefined) data.llmProvider = llmProvider;
     if (llmModel !== undefined) data.llmModel = llmModel;
+    if (deepgramModel !== undefined) data.deepgramModel = deepgramModel;
 
     // For API keys: encrypt if provided, set to null if empty string, skip if undefined
     if (llmApiKey !== undefined) {
@@ -105,6 +108,7 @@ export async function PATCH(request: NextRequest) {
         llmModel: true,
         llmApiKey: true,
         deepgramApiKey: true,
+        deepgramModel: true,
         resendApiKey: true,
       },
     });
@@ -114,6 +118,7 @@ export async function PATCH(request: NextRequest) {
       llmModel: org?.llmModel || "gpt-4o",
       llmApiKeySet: !!org?.llmApiKey,
       deepgramApiKeySet: !!org?.deepgramApiKey,
+      deepgramModel: org?.deepgramModel || "nova-3",
       resendApiKeySet: !!org?.resendApiKey,
       llmEnvKeySet: !!process.env.OPENAI_API_KEY,
       deepgramEnvKeySet: !!process.env.DEEPGRAM_API_KEY,

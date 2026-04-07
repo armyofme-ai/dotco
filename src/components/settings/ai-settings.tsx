@@ -26,11 +26,39 @@ interface AIConfig {
   llmModel: string;
   llmApiKeySet: boolean;
   deepgramApiKeySet: boolean;
+  deepgramModel: string;
   resendApiKeySet: boolean;
   llmEnvKeySet: boolean;
   deepgramEnvKeySet: boolean;
   resendEnvKeySet: boolean;
 }
+
+const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
+  openai: [
+    { label: "GPT-4o", value: "gpt-4o" },
+    { label: "GPT-4o Mini", value: "gpt-4o-mini" },
+    { label: "GPT-4.1", value: "gpt-4.1" },
+    { label: "GPT-4.1 Mini", value: "gpt-4.1-mini" },
+    { label: "GPT-4.1 Nano", value: "gpt-4.1-nano" },
+    { label: "o3 Mini", value: "o3-mini" },
+  ],
+  anthropic: [
+    { label: "Claude Sonnet 4.6", value: "claude-sonnet-4-6-20250514" },
+    { label: "Claude Haiku 4.5", value: "claude-haiku-4-5-20251001" },
+    { label: "Claude Opus 4.6", value: "claude-opus-4-6-20250514" },
+  ],
+};
+
+const DEEPGRAM_MODELS = [
+  { label: "Nova 3 (latest, multilingual)", value: "nova-3" },
+  { label: "Nova 2", value: "nova-2" },
+  { label: "Nova 2 Medical", value: "nova-2-medical" },
+  { label: "Enhanced", value: "enhanced" },
+  { label: "Base", value: "base" },
+  { label: "Whisper Large", value: "whisper-large" },
+  { label: "Whisper Medium", value: "whisper-medium" },
+  { label: "Whisper Small", value: "whisper-small" },
+];
 
 function KeyStatus({
   configured,
@@ -75,6 +103,7 @@ export function AISettings() {
 
   // Deepgram form state
   const [deepgramApiKey, setDeepgramApiKey] = useState("");
+  const [deepgramModel, setDeepgramModel] = useState("nova-3");
   const [savingDeepgram, setSavingDeepgram] = useState(false);
 
   // Resend form state
@@ -88,7 +117,8 @@ export function AISettings() {
       const data: AIConfig = await res.json();
       setConfig(data);
       setLlmProvider(data.llmProvider);
-      setLlmModel(data.llmModel === "gpt-4o" ? "" : data.llmModel);
+      setLlmModel(data.llmModel);
+      setDeepgramModel(data.deepgramModel || "nova-3");
     } catch {
       toast.error("Failed to load AI configuration");
     } finally {
@@ -105,7 +135,7 @@ export function AISettings() {
     try {
       const body: Record<string, string> = {
         llmProvider,
-        llmModel: llmModel || "gpt-4o",
+        llmModel,
       };
       if (llmApiKey) body.llmApiKey = llmApiKey;
 
@@ -136,10 +166,13 @@ export function AISettings() {
   async function handleSaveDeepgram() {
     setSavingDeepgram(true);
     try {
+      const body: Record<string, string> = { deepgramModel };
+      if (deepgramApiKey) body.deepgramApiKey = deepgramApiKey;
+
       const res = await fetch("/api/settings/ai", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deepgramApiKey }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -210,7 +243,7 @@ export function AISettings() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="llm-provider">Provider</Label>
-              <Select value={llmProvider} onValueChange={(v) => v && setLlmProvider(v)}>
+              <Select value={llmProvider} onValueChange={(v) => { if (!v) return; setLlmProvider(v); setLlmModel(LLM_MODELS[v]?.[0]?.value || "gpt-4o"); }}>
                 <SelectTrigger id="llm-provider">
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
@@ -222,12 +255,18 @@ export function AISettings() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="llm-model">Model</Label>
-              <Input
-                id="llm-model"
-                placeholder="gpt-4o"
-                value={llmModel}
-                onChange={(e) => setLlmModel(e.target.value)}
-              />
+              <Select value={llmModel} onValueChange={(v) => v && setLlmModel(v)}>
+                <SelectTrigger id="llm-model">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(LLM_MODELS[llmProvider] || LLM_MODELS.openai).map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="space-y-2">
@@ -276,6 +315,21 @@ export function AISettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="deepgram-model">Model</Label>
+            <Select value={deepgramModel} onValueChange={(v) => v && setDeepgramModel(v)}>
+              <SelectTrigger id="deepgram-model">
+                <SelectValue placeholder="Select model" />
+              </SelectTrigger>
+              <SelectContent>
+                {DEEPGRAM_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="deepgram-api-key">API Key</Label>

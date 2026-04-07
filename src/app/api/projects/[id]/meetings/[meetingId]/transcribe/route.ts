@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { DeepgramClient } from "@deepgram/sdk";
 import type { SpeakerEntry } from "@/lib/speaker-utils";
-import { getDeepgramKey } from "@/lib/ai-config";
+import { getDeepgramConfig } from "@/lib/ai-config";
 
 interface TranscriptSegment {
   speaker: string;
@@ -36,8 +36,8 @@ async function runTranscription(projectId: string, meetingId: string, mediaId: s
     const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
     console.log(`[${runId}] Downloaded ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB, sending to Deepgram...`);
 
-    const deepgramKey = await getDeepgramKey(organizationId);
-    if (!deepgramKey) {
+    const deepgramConfig = await getDeepgramConfig(organizationId);
+    if (!deepgramConfig.apiKey) {
       console.error(`[${runId}] No Deepgram API key configured`);
       const current = await prisma.meeting.findUnique({ where: { id: meetingId }, select: { transcription: true } });
       if (current?.transcription?.includes(runId)) {
@@ -53,11 +53,11 @@ async function runTranscription(projectId: string, meetingId: string, mediaId: s
       }
       return;
     }
-    const deepgram = new DeepgramClient({ apiKey: deepgramKey });
+    const deepgram = new DeepgramClient({ apiKey: deepgramConfig.apiKey });
     const result = await deepgram.listen.v1.media.transcribeFile(
       audioBuffer,
       {
-        model: "nova-3",
+        model: deepgramConfig.model,
         diarize: true,
         smart_format: true,
         punctuate: true,

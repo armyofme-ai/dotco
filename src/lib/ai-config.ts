@@ -45,13 +45,19 @@ export async function getAIConfig(organizationId: string) {
   return { provider, model, apiKey: apiKey || null };
 }
 
-export async function getDeepgramKey(organizationId: string) {
+export async function getDeepgramConfig(organizationId: string) {
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
-    select: { deepgramApiKey: true },
+    select: { deepgramApiKey: true, deepgramModel: true },
   });
-  if (org?.deepgramApiKey) return decrypt(org.deepgramApiKey);
-  return process.env.DEEPGRAM_API_KEY || null;
+  const apiKey = org?.deepgramApiKey ? decrypt(org.deepgramApiKey) : (process.env.DEEPGRAM_API_KEY || null);
+  const model = org?.deepgramModel || "nova-3";
+  return { apiKey, model };
+}
+
+export async function getDeepgramKey(organizationId: string) {
+  const { apiKey } = await getDeepgramConfig(organizationId);
+  return apiKey;
 }
 
 export async function getResendKey(organizationId: string) {
