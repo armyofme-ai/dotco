@@ -62,7 +62,7 @@ async function runTranscription(projectId: string, meetingId: string, mediaId: s
         smart_format: true,
         punctuate: true,
         paragraphs: true,
-        detect_language: true,
+        language: "multi",
       }
     );
 
