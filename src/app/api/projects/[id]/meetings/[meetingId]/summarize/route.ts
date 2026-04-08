@@ -123,6 +123,21 @@ async function runSummarization(id: string, meetingId: string, sessionUserId: st
       })
       .join("\n");
 
+    // Fetch tasks previously generated from this meeting (for deduplication)
+    const meetingTasks = await prisma.task.findMany({
+      where: {
+        projectId: id,
+        OR: [
+          { description: `Generated from meeting [${meetingId}]: ${meeting.name}` },
+          { description: `Generated from meeting: ${meeting.name}` },
+        ],
+      },
+      select: { id: true, title: true, status: true },
+    });
+    const meetingTasksContext = meetingTasks
+      .map((t) => `- [${t.status}] ${t.title}`)
+      .join("\n");
+
     const promptText = `You are a strategic analyst for a venture builder called "${project.organization?.name || "the organization"}". You are analyzing a meeting transcript with deep organizational context.
 
 Today's date is ${todayStr}.
@@ -141,6 +156,9 @@ ${teamContext}
 
 ### Active Tasks in "${project.name}"
 ${activeTasksContext || "No active tasks."}
+
+### Tasks Already Generated From This Meeting
+${meetingTasksContext || "None yet (first summarization)."}
 
 ${previousContext ? `### Previous Meeting Summaries (for continuity)\n${previousContext}` : ""}
 
@@ -168,6 +186,7 @@ CRITICAL GUIDELINES:
 - NEXT STEPS: Be extremely rigorous. Only include items where someone explicitly committed to doing something or was clearly assigned. Listen for phrases like "I'll do it", "yo me apunto", "I'll draft", "let's schedule", etc. The assignee MUST be the person who volunteered or was assigned, not someone who merely discussed the topic. If the transcript is in Spanish or another language, still use the attendee names exactly as listed above.
 - All dates MUST be in the future (${todayStr} or later). If a specific date is mentioned (e.g., "Wednesday meeting"), calculate the actual date.
 - If a project status change was discussed (e.g., killing a project, putting on hold), include it as a next step: "Move [project] status to [new status]".
+- DEDUPLICATION: Do NOT re-generate next steps that match tasks listed in "Tasks Already Generated From This Meeting" above. Only include genuinely NEW action items not already captured. An empty nextSteps array is perfectly fine if all action items are already covered.
 
 Return ONLY the JSON object, with no additional text or markdown formatting.`;
 
@@ -219,15 +238,7 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
 
       await tx.meetingPoint.deleteMany({ where: { meetingId } });
       await tx.nextStep.deleteMany({ where: { meetingId } });
-      await tx.task.deleteMany({
-        where: {
-          projectId: id,
-          OR: [
-            { description: `Generated from meeting [${meetingId}]: ${meeting.name}` },
-            { description: `Generated from meeting: ${meeting.name}` },
-          ],
-        },
-      });
+      // Do NOT delete existing tasks — preserve user modifications (status, edits)
 
       if (parsed.meetingPoints && parsed.meetingPoints.length > 0) {
         await tx.meetingPoint.createMany({
@@ -237,6 +248,10 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
         });
       }
 
+      // Build set of existing task titles for deduplication
+      const normalize = (s: string) => s.toLowerCase().trim().replace(/[.,;:!?]+$/g, "");
+      const existingTitles = new Set(meetingTasks.map((t) => normalize(t.title)));
+
       const assigned: { assigneeId: string; description: string; dueDate: string | null }[] = [];
       if (parsed.nextSteps && parsed.nextSteps.length > 0) {
         for (let index = 0; index < parsed.nextSteps.length; index++) {
@@ -245,9 +260,12 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
           if (step.assignee) {
             assigneeId = attendeeNameMap.get(step.assignee.toLowerCase()) ?? null;
           }
+          // Always create the NextStep (display artifact, refreshed each time)
           await tx.nextStep.create({
             data: { description: step.description, dueDate: step.dueDate ? new Date(step.dueDate) : null, order: index, assigneeId, meetingId },
           });
+          // Only create a Task if one with a matching title doesn't already exist
+          if (existingTitles.has(normalize(step.description))) continue;
           let taskEndDate = step.dueDate ? new Date(step.dueDate) : new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
           if (taskEndDate < today) taskEndDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
           const task = await tx.task.create({

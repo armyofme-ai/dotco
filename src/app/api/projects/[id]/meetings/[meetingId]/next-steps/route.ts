@@ -138,7 +138,7 @@ export async function POST(
       const task = await tx.task.create({
         data: {
           title: description,
-          description: `Generated from meeting: ${meeting.name}`,
+          description: `Generated from meeting [${meetingId}]: ${meeting.name}`,
           status: "TODO",
           startDate: today,
           endDate: taskEndDate,
