@@ -220,7 +220,13 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
       await tx.meetingPoint.deleteMany({ where: { meetingId } });
       await tx.nextStep.deleteMany({ where: { meetingId } });
       await tx.task.deleteMany({
-        where: { projectId: id, description: `Generated from meeting [${meetingId}]: ${meeting.name}` },
+        where: {
+          projectId: id,
+          OR: [
+            { description: `Generated from meeting [${meetingId}]: ${meeting.name}` },
+            { description: `Generated from meeting: ${meeting.name}` },
+          ],
+        },
       });
 
       if (parsed.meetingPoints && parsed.meetingPoints.length > 0) {
