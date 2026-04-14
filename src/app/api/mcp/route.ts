@@ -223,6 +223,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ─── GET for transport discovery ────────────────────────────────────
+// mcp-remote tries GET first to discover OAuth/SSE. Return a proper
+// JSON response so it falls back to HTTP POST transport.
+
+export async function GET() {
+  return Response.json(
+    { jsonrpc: "2.0", error: { code: -32600, message: "Use POST for JSON-RPC requests" } },
+    { status: 405, headers: { ...corsHeaders(), Allow: "POST, OPTIONS" } }
+  );
+}
+
 // ─── OPTIONS for CORS preflight ─────────────────────────────────────
 
 export async function OPTIONS() {
