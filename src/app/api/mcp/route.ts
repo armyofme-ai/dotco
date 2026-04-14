@@ -223,15 +223,51 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ─── GET for transport discovery ────────────────────────────────────
-// mcp-remote tries GET first to discover OAuth/SSE. Return a proper
-// JSON response so it falls back to HTTP POST transport.
+// ─── GET for Streamable HTTP MCP transport (SSE notifications) ──────
+// mcp-remote opens a GET SSE connection for server-to-client notifications.
+// We keep it alive with periodic pings but don't send any events since
+// we have no server-initiated notifications.
 
-export async function GET() {
-  return Response.json(
-    { jsonrpc: "2.0", error: { code: -32600, message: "Use POST for JSON-RPC requests" } },
-    { status: 405, headers: { ...corsHeaders(), Allow: "POST, OPTIONS" } }
-  );
+export async function GET(request: NextRequest) {
+  // Auth check
+  const authResult = await authenticate(request);
+  if (!authResult.authenticated) {
+    return Response.json(
+      jsonRpcError(null, -32000, "Unauthorized: invalid or missing API key"),
+      { status: 401, headers: corsHeaders() }
+    );
+  }
+
+  const stream = new ReadableStream({
+    start(controller) {
+      // Send initial comment to establish SSE connection
+      controller.enqueue(new TextEncoder().encode(": connected\n\n"));
+
+      // Keep alive with periodic pings
+      const interval = setInterval(() => {
+        try {
+          controller.enqueue(new TextEncoder().encode(": ping\n\n"));
+        } catch {
+          clearInterval(interval);
+        }
+      }, 30000);
+
+      // Clean up on abort
+      request.signal.addEventListener("abort", () => {
+        clearInterval(interval);
+        try { controller.close(); } catch { /* already closed */ }
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      ...corsHeaders(),
+    },
+  });
 }
 
 // ─── OPTIONS for CORS preflight ─────────────────────────────────────
