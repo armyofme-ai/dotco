@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   const clientToken = await generateClientTokenFromReadWriteToken({
     token,
     pathname,
-    allowedContentTypes: ["image/*", "audio/*"],
+    allowedContentTypes: ["image/*", "audio/*", "video/*"],
     maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
   });
 
