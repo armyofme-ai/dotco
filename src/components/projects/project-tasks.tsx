@@ -72,6 +72,22 @@ export function ProjectTasks({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
+  const handleStatusChange = async (taskId: string, newStatus: string) => {
+    try {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      const res = await fetch(`/api/projects/${projectId}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      await onTasksChanged();
+    } catch (error) {
+      console.error("Error updating task status:", error);
+    }
+  };
+
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
       if (statusFilter !== "ALL" && task.status !== statusFilter) return false;
@@ -207,14 +223,25 @@ export function ProjectTasks({
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${getTaskStatusColor(
-                          task.status
-                        )}`}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Select
+                        value={task.status}
+                        onValueChange={(v) => v && handleStatusChange(task.id, v)}
                       >
-                        {getTaskStatusLabel(task.status)}
-                      </span>
+                        <SelectTrigger
+                          className={`h-7 w-[120px] border-none px-2 text-xs font-medium ${getTaskStatusColor(task.status)}`}
+                          size="sm"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TASK_STATUS_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">

@@ -21,6 +21,7 @@ interface SummaryResponse {
   strategicAnalysis: string;
   meetingPoints: { title: string; description: string }[];
   nextSteps: {
+    title: string;
     description: string;
     assignee: string | null;
     dueDate: string | null;
@@ -175,7 +176,7 @@ Analyze this meeting deeply and return a JSON object with the following structur
     {"title": "Topic title", "description": "Detailed description including: what was said, by whom, what was decided (if anything), and what remains open. Include direct references to who said what."}
   ],
   "nextSteps": [
-    {"description": "Specific, actionable task description", "assignee": "Exact name of person who volunteered or was assigned (listen carefully for who says 'I'll do it' or 'yo me apunto'), or null if unclear", "dueDate": "YYYY-MM-DD or null"}
+    {"title": "Short task title (5-10 words max, e.g. 'Set up staging environment')", "description": "Detailed description of what needs to be done, with context from the meeting", "assignee": "Exact name of person who volunteered or was assigned (listen carefully for who says 'I'll do it' or 'yo me apunto'), or null if unclear", "dueDate": "YYYY-MM-DD or null"}
   ]
 }
 
@@ -183,7 +184,7 @@ CRITICAL GUIDELINES:
 - SUMMARY: Be thorough and specific. Mention who said what. Distinguish between decisions made and topics merely discussed. Note any disagreements or concerns raised.
 - STRATEGIC ANALYSIS: Connect this meeting to the organization's projects and goals. Identify patterns, risks, validated or invalidated assumptions, and strategic shifts.
 - MEETING POINTS: Each topic discussed should be its own point. Include the nuance — who advocated for what, what concerns were raised, what was the outcome.
-- NEXT STEPS: Be extremely rigorous. Only include items where someone explicitly committed to doing something or was clearly assigned. Listen for phrases like "I'll do it", "yo me apunto", "I'll draft", "let's schedule", etc. The assignee MUST be the person who volunteered or was assigned, not someone who merely discussed the topic. If the transcript is in Spanish or another language, still use the attendee names exactly as listed above.
+- NEXT STEPS: Be extremely rigorous. Only include items where someone explicitly committed to doing something or was clearly assigned. The "title" must be SHORT (5-10 words, like a task board card). Put the full context and details in "description". Listen for phrases like "I'll do it", "yo me apunto", "I'll draft", "let's schedule", etc. The assignee MUST be the person who volunteered or was assigned, not someone who merely discussed the topic. If the transcript is in Spanish or another language, still use the attendee names exactly as listed above.
 - All dates MUST be in the future (${todayStr} or later). If a specific date is mentioned (e.g., "Wednesday meeting"), calculate the actual date.
 - If a project status change was discussed (e.g., killing a project, putting on hold), include it as a next step: "Move [project] status to [new status]".
 - DEDUPLICATION: Do NOT re-generate next steps that match tasks listed in "Tasks Already Generated From This Meeting" above. Only include genuinely NEW action items not already captured. An empty nextSteps array is perfectly fine if all action items are already covered.
@@ -265,15 +266,17 @@ Return ONLY the JSON object, with no additional text or markdown formatting.`;
             data: { description: step.description, dueDate: step.dueDate ? new Date(step.dueDate) : null, order: index, assigneeId, meetingId },
           });
           // Only create a Task if one with a matching title doesn't already exist
-          if (existingTitles.has(normalize(step.description))) continue;
+          const taskTitle = step.title || step.description;
+          if (existingTitles.has(normalize(taskTitle))) continue;
           let taskEndDate = step.dueDate ? new Date(step.dueDate) : new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
           if (taskEndDate < today) taskEndDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+          const taskDescription = step.description ? `${step.description}\n\n---\nGenerated from meeting [${meetingId}]: ${meeting.name}` : `Generated from meeting [${meetingId}]: ${meeting.name}`;
           const task = await tx.task.create({
-            data: { title: step.description, description: `Generated from meeting [${meetingId}]: ${meeting.name}`, status: "TODO", startDate: today, endDate: taskEndDate, projectId: id },
+            data: { title: taskTitle, description: taskDescription, status: "TODO", startDate: today, endDate: taskEndDate, projectId: id },
           });
           if (assigneeId) {
             await tx.taskAssignee.create({ data: { userId: assigneeId, taskId: task.id } });
-            assigned.push({ assigneeId, description: step.description, dueDate: step.dueDate });
+            assigned.push({ assigneeId, description: taskTitle, dueDate: step.dueDate });
           }
         }
       }
